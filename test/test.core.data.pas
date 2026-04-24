@@ -1539,7 +1539,7 @@ const
 
 procedure TTestCoreProcess.EncodeDecodeJSON;
 var
-  J, J2, K, U, U2: RawUtf8;
+  J, J2, K, U, U2, y: RawUtf8;
   info: TGetJsonField;
   P: PUtf8Char;
   vv: variant;
@@ -1754,7 +1754,7 @@ var
   procedure TestGit(ro: TJsonParserOptions; wo: TTextWriterWriteObjectOptions);
   var
     i: PtrInt;
-    U: RawUtf8;
+    U, y: RawUtf8;
     s: RawJson;
     git, git2: TTestCustomJsonGitHubs;
     item, value: PUtf8Char;
@@ -1813,6 +1813,9 @@ var
         check(JsonReformat(s, jsonCompact) =
           FormatUtf8('{"login":"%","id":%}', [owner.login, owner.id]));
       end;
+    y := JsonToYaml(U);
+    Check(y <> '', 'JsonToYaml zend');
+    CheckEqual(JsonReformat(U, jsonCompact), YamlToJson(y), 'YamlToJson zend');
     Check(DynArrayLoadJsonInPlace(
       git2, pointer(U), TypeInfo(TTestCustomJsonGitHubs)) <> nil);
     if not CheckFailed(length(git) = Length(git2)) then
@@ -4074,6 +4077,10 @@ begin
   Check(JsonReformat(JsonReformat(discogsJson, jsonHumanReadable), jsonCompact) = U);
   Check(JsonReformat(JsonReformat(discogsJson, jsonUnquotedPropName), jsonCompact) = U);
   Check(JsonReformat(JsonReformat(U, jsonUnquotedPropName), jsonCompact) = U);
+  U := JsonReformat(discogsJson, jsonNoEscapeUnicode); // YAML normalizes as UTF-8
+  y := JsonToYaml(U);
+  FileFromString(y, WorkDir + 'discogs.yaml');
+  CheckEqual(YamlToJson(y), U, 'discogs.yaml');
   RecordLoadJsonInPlace(Disco, pointer(discogsJson), TypeInfo(TTestCustomDiscogs));
   Check(length(Disco.releases) <= Disco.pagination.items);
   for i := 0 to high(Disco.Releases) do
