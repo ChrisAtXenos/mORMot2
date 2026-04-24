@@ -491,6 +491,13 @@ const
      dvoValueCopiedByReference,
      dvoAllowDoubleValue];
 
+  /// JSON_FAST_FLOAT with dvoInternNames option
+  JSON_FAST_FLOAT_INTERNING =
+    [dvoReturnNullForUnknownProperty,
+     dvoValueCopiedByReference,
+     dvoAllowDoubleValue,
+     dvoInternNames];
+
 var
   /// TDocVariant options which may be used for plain JSON parsing
   // - this won't recognize any extended syntax
