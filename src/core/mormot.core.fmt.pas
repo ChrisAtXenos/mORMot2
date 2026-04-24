@@ -1596,13 +1596,12 @@ begin
   result := true;
 end;
 
-function IsDashLine(const S: RawUtf8): boolean;
+function IsDashLine(p: PUtf8Char): boolean;
   {$ifdef HASINLINE} inline; {$endif}
-// fast check, no afterDash extraction
-begin
-  result := (S <> '') and
-            (S[1] = '-') and
-            ((length(S) = 1) or (S[2] in [' ', #9]));
+begin // fast check, no afterDash extraction
+  result := (p <> nil) and
+            (p[0] = '-') and
+            (p[1] in [#0, ' ', #9]);
 end;
 
 function YamlSpecialChars(p: PUtf8Char): boolean;
@@ -1612,7 +1611,7 @@ begin
     case p^ of
       #0:
         break;
-      #1 .. #32,
+      #1 .. #31, // but ' ' in texts are allowed
       '"',
       '\':
         exit; // special char requires quotes
@@ -2133,7 +2132,7 @@ begin
     if c^.Indent <= MapIndent then
       exit;
     // a real "- " dash item at the continuation indent starts a new seq entry
-    if IsDashLine(c^.Content) then
+    if IsDashLine(pointer(c^.Content)) then
       exit;
     // a new "key:" line (quoted or plain) is a nested map, not continuation;
     // LineKeyEnd handles both "foo:" and '"foo":' forms
@@ -2188,7 +2187,7 @@ begin
         ParseValue(c^.Indent)
       else if (not AtEnd) and
               (c^.Indent = Indent) and
-              IsDashLine(c^.Content) then
+              IsDashLine(pointer(c^.Content)) then
         // YAML 1.2 compact block seq: "key:" followed by "- item" at the
         // same indent as the key (common in real-world OpenAPI specs)
         ParseBlockSeq(c^.Indent)
@@ -2260,7 +2259,7 @@ begin
     end
     else if afterDash[1] in ['|', '>'] then
       EmitBlockScalar(afterDash, Indent)
-    else if IsDashLine(afterDash) then
+    else if IsDashLine(pointer(afterDash)) then
     begin
       // YAML 1.2 compact nested block-seq: "- - X" on one physical line.
       // The inner "- X" starts a nested seq at (outer Indent + 2); rewrite
@@ -2329,7 +2328,7 @@ begin
       ParseValue(c^.Indent)
     else if (not AtEnd) and
             (c^.Indent = MapIndent) and
-            IsDashLine(c^.Content) then
+            IsDashLine(pointer(c^.Content)) then
       ParseBlockSeq(c^.Indent)
     else
       fOut.AddNull;
@@ -2387,7 +2386,7 @@ begin
         ParseValue(c^.Indent)
       else if (not AtEnd) and
               (c^.Indent = MapIndent) and
-              IsDashLine(c^.Content) then
+              IsDashLine(pointer(c^.Content)) then
         ParseBlockSeq(c^.Indent)
       else
         fOut.AddNull;
