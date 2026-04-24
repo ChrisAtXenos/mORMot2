@@ -4024,6 +4024,9 @@ var
 function DefaultHash(const s: RawByteString; crc: cardinal = 0): cardinal; overload;
   {$ifdef HASINLINE}inline;{$endif}
 
+/// compute a 32-bit hash of Trim(string) using DefaultHasher()
+function DefaultHashTrim(const s: RawByteString; crc: cardinal = 0): cardinal;
+
 /// compute a 32-bit hash of any array of bytes using DefaultHasher()
 // - so the hash value may change on another computer or after program restart
 function DefaultHash(const b: TBytes; crc: cardinal = 0): cardinal; overload;
@@ -12713,6 +12716,28 @@ end;
 function DefaultHash(const s: RawByteString; crc: cardinal): cardinal;
 begin
   result := DefaultHasher(crc, pointer(s), length(s));
+end;
+
+function DefaultHashTrim(const s: RawByteString; crc: cardinal): cardinal;
+var
+  p: PAnsiChar;
+  l: PtrInt;
+begin
+  p := pointer(s);
+  l := length(s);
+  if p <> nil then
+  begin
+    while (l > 0) and
+          (p^ <= ' ') do // trim left in-place
+    begin
+      inc(p);
+      dec(l);
+    end;
+    while (l > 0) and
+          (p[l - 1] <= ' ') do // trim right in-place
+      dec(l);
+  end;
+  result := DefaultHasher(crc, p, l);
 end;
 
 function DefaultHash(const b: TBytes; crc: cardinal): cardinal;
