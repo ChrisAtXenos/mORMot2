@@ -175,11 +175,13 @@ procedure YamlToVariant(const Yaml: RawUtf8; out Doc: TDocVariantData;
   Options: TDocVariantOptions = JSON_YAML);
 
 /// convenient wrapper called e.g. by TOpenApiParser.ParseYaml()
+// - will catch internally any EYamlException and return false on failure
 function TryYamlToVariant(const Yaml: RawUtf8;
   out Doc: TDocVariantData): boolean;
 
 /// parse a YAML file into a TDocVariantData
 // - file is expected to be UTF-8 (BOM tolerated); see YamlToVariant
+// - will catch internally any EYamlException and return false on failure
 function TryYamlFileToVariant(const FileName: TFileName; out Doc: TDocVariantData;
   Options: TDocVariantOptions = JSON_YAML): boolean;
 
@@ -202,6 +204,10 @@ function IsYamlFileName(const FileName: TFileName): boolean;
 // JsonToObject, LoadJson) without going through TDocVariantData
 // - returns '' on parse failure (inspect EYamlException for details)
 function YamlToJson(const Yaml: RawUtf8): RawUtf8;
+
+/// convert YAML 1.2 UTF-8 text directly into a JSON RawUtf8
+// - will catch internally any EYamlException and return false on failure
+function TryYamlToJson(const Yaml: RawUtf8; out Json: RawUtf8): boolean;
 
 /// convert JSON UTF-8 text into YAML 1.2 UTF-8 text
 // - pipes the JSON through TDocVariantData then VariantToYaml
@@ -2940,7 +2946,6 @@ begin
   fOut.SetText(result);
 end;
 
-
 procedure YamlToVariant(const Yaml: RawUtf8; out Doc: TDocVariantData;
   Options: TDocVariantOptions);
 var
@@ -2974,11 +2979,10 @@ function TryYamlFileToVariant(const FileName: TFileName; out Doc: TDocVariantDat
 var
   content: RawUtf8;
 begin
-  content := RawUtf8FromFile(FileName);
+  content := RawUtf8FromFile(FileName); // BOM stripping
   if content = '' then
     EYamlException.RaiseUtf8('TryYamlFileToVariant: file not found: %',
       [FileName]);
-  // BOM stripping happens inside YamlToVariant now
   try
     YamlToVariant(content, Doc, Options);
     result := true;
@@ -3301,18 +3305,22 @@ end;
 function YamlToJson(const Yaml: RawUtf8): RawUtf8;
 var
   conv: TYamlToJson;
-  src: RawUtf8;
 begin
-  src := Yaml;
-  // strip optional UTF-8 BOM - accepted in files and in-memory buffers
-  if (length(src) >= 3) and
-     (PCardinal(pointer(src))^ and $00ffffff = BOM_UTF8) then
-    delete(src, 1, 3);
   conv := TYamlToJson.Create;
   try
-    result := conv.Run(src);
+    result := conv.Run(Yaml);
   finally
     conv.Free;
+  end;
+end;
+
+function TryYamlToJson(const Yaml: RawUtf8; out Json: RawUtf8): boolean;
+begin
+  try
+    Json := YamlToJson(Yaml); // may raise EYamlException
+    result := true;
+  except
+    result := false;
   end;
 end;
 
