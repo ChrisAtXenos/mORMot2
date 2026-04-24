@@ -160,12 +160,10 @@ type
   TYamlWriterOptions = set of TYamlWriterOption;
 
 const
-  /// TDocVariant flavor for YAML, enabling floating numbers and name interning
-  JSON_YAML =
-    [dvoReturnNullForUnknownProperty,
-     dvoValueCopiedByReference,
-     dvoAllowDoubleValue,
-     dvoInternNames];
+  /// TDocVariant flavor for YAML, enabling floating numbers
+  // - we don't enable name interning by default because it is actually slower
+  // for typical YAML small content
+  JSON_YAML = JSON_FAST_FLOAT;
 
 /// parse YAML UTF-8 text into a TDocVariantData
 // - accepts YAML 1.2 core-schema subset (see unit header)
