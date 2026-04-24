@@ -815,6 +815,7 @@ const
   GUID_NULL: TGuid = '{00000000-0000-0000-0000-000000000000}';
 
   NULL_LOW   = ord('n') + ord('u') shl 8 + ord('l') shl 16 + ord('l') shl 24;
+  NULL_HI    = ord('N') + ord('U') shl 8 + ord('L') shl 16 + ord('L') shl 24;
   FALSE_LOW  = ord('f') + ord('a') shl 8 + ord('l') shl 16 + ord('s') shl 24;
   FALSE_LOW2 = ord('a') + ord('l') shl 8 + ord('s') shl 16 + ord('e') shl 24;
   TRUE_LOW   = ord('t') + ord('r') shl 8 + ord('u') shl 16 + ord('e') shl 24;

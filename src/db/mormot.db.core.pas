@@ -2401,7 +2401,6 @@ end;
 const
   _FROM32 = ord('F') + ord('R') shl 8 + ord('O') shl 16 + ord('M') shl 24;
   _WHER32 = ord('W') + ord('H') shl 8 + ord('E') shl 16 + ord('R') shl 24;
-  _NULL32 = ord('N') + ord('U') shl 8 + ord('L') shl 16 + ord('L') shl 24;
 
 function PosSelectTable(Sql: PUtf8Char): PUtf8Char;
 begin
@@ -3288,7 +3287,7 @@ var
         exit; // end of string before end quote -> incorrect
       RawUtf8ToVariant(Where.Value, Where.ValueVariant);
     end
-    else if (PInteger(P)^ and $DFDFDFDF = _NULL32) and
+    else if (PInteger(P)^ and $DFDFDFDF = NULL_HI) and
             (P[4] in [#0..' ', ';']) then
     begin
       // NULL statement

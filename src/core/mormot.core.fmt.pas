@@ -1461,13 +1461,14 @@ begin
   SetLength(S, cut);
 end;
 
-function IsYamlNull(const S: RawUtf8): boolean;
+function IsYamlNull(p: PUtf8Char): boolean;
+  {$ifdef HASINLINE} inline; {$endif}
 begin
   // YAML 1.2 core schema: null has three case-insensitive spellings,
   // the '~' shortcut, or the empty string
-  result := (S = '') or
-            (S = '~') or
-            IdemPropNameU(S, 'null');
+  result := (PWord(p)^ = ord('~')) or
+            ((PInteger(p)^ and $DFDFDFDF = NULL_HI) and
+             (p[4] = #0));
 end;
 
 function IsYamlBool(const S: RawUtf8; out V: boolean): boolean;
