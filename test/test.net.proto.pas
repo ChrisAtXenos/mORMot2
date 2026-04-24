@@ -362,7 +362,7 @@ begin
   _OpenApiYamlDispatch;
 end;
 
-procedure TNetworkProtocols._OpenApiYamlDispatch;
+procedure TNetworkProtocols.OpenApiYamlDispatch;
 const
   YAML_SPEC: RawUtf8 =
     'openapi: 3.0.0'#10 +
