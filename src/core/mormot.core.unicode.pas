@@ -2129,6 +2129,12 @@ function TrimLeft(const S: RawUtf8): RawUtf8;
 // newline, space, and tab characters
 function TrimRight(const S: RawUtf8): RawUtf8;
 
+/// single-allocation (therefore faster) alternative to TrimLeft(copy())
+procedure TrimLeftCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
+
+/// single-allocation (therefore faster) alternative to TrimRight(copy())
+procedure TrimRightCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
+
 /// trims leading whitespaces of every lines of the UTF-8 text
 // - also delete void lines
 // - could be used e.g. before FindNameValue() call
@@ -8488,6 +8494,55 @@ begin
     result := S
   else
     FastSetString(result, pointer(S), i);
+end;
+
+procedure TrimLeftCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
+var
+  len: PtrInt;
+begin
+  if count > 0 then
+  begin
+    if start <= 0 then
+      start := 1;
+    len := Length(S);
+    while (start <= len) and
+          (S[start] <= ' ') do // trim left
+    begin
+      inc(start);
+      dec(count);
+    end;
+    dec(start);
+    dec(len, start);
+    if count < len then
+      len := count;
+  end
+  else
+    len := 0;
+  TrimCopyAssign(pointer(S), start, len, result);
+end;
+
+procedure TrimRightCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
+var
+  len: PtrInt;
+begin
+  if count > 0 then
+  begin
+    if start <= 0 then
+      start := 0
+    else
+      dec(start);
+    len := Length(S) - start;
+    if count < len then
+      len := count;
+    while len > 0 do
+      if S[start + len] <= ' ' then // trim right
+        dec(len)
+      else
+        break;
+  end
+  else
+    len := 0;
+  TrimCopyAssign(pointer(S), start, len, result);
 end;
 
 procedure TrimLeftLines(var S: RawUtf8);
