@@ -579,44 +579,68 @@ type
   // - fsoDisableSaveIfNeeded will disable SaveIfNeeded method process
   // - fsoReadIni will disable JSON loading, and expect INI file format
   // - fsoWriteIni/fsoWriteHjson will force SaveIfNeeded to use INI/HJson format
-  // - fsoReadYaml/fsoWriteYaml will force SaveIfNeeded to use YAML encoding
+  // - fsoWriteYaml will force SaveIfNeeded to use YAML encoding; there is no
+  // fsoReadYaml since our YAML parser raise exceptions so explicit LoadFromYaml
+  // method call is cleaner for this new feature
   // - fsoNoEnumsComment will customize SaveIfNeeded output
   TSynJsonFileSettingsOption = (
     fsoDisableSaveIfNeeded,
     fsoReadIni,
     fsoWriteIni,
-    fsoReadYaml,
     fsoWriteYaml,
     fsoWriteHjson,
     fsoNoEnumsComment);
   TSynJsonFileSettingsOptions = set of TSynJsonFileSettingsOption;
 
   /// abstract parent class able to store settings as JSON file
-  // - would fallback and try to read as INI file if no valid JSON is found
+  // - supports standard JSON, but also JSON5, JSONC or HJson variations
+  // - fallback and try to read as INI or YAML file if no valid JSON is found
   TSynJsonFileSettings = class(TSynAutoCreateFields)
   protected
-    fInitialJsonContent, fSectionName: RawUtf8;
+    fCurrentContent, fSectionName: RawUtf8;
     fFileName: TFileName;
     fLoadedAsIni: boolean;
     fSettingsOptions: TSynJsonFileSettingsOptions;
     fIniOptions: TIniFeatures;
-    fInitialFileHash: cardinal;
+    fCurrentHash: cardinal;
     // could be overriden to validate the content coherency and/or clean fields
-    function AfterLoad: boolean; virtual;
+    function AfterLoad(const aText: RawUtf8): boolean; virtual;
   public
     /// initialize this instance and all its published fields
     constructor Create; override;
-    /// read existing settings from a JSON content
-    // - if the input is no JSON object, then a .INI structure is tried
-    function LoadFromJson(const aJson: RawUtf8;
+    /// read existing settings from a JSON or INI (not YAML) content
+    // - if the input is no JSON object, then .INI structure is tried
+    // - if fsoReadIni options are set, only .INI format is tried, and no JSON
+    // - since our YAML parser raise exceptions, we don't try YAML by default:
+    // call explicitly the new LoadFromYaml() method or use .yaml/.yml explicit
+    // extension for LoadFromFile()
+    function LoadFromText(const aContent: RawUtf8;
       const aSectionName: RawUtf8 = 'Main'): boolean;
-    /// read existing settings from a JSON or INI file file
+    {$ifndef PUREMORMOT2}
+    /// read existing settings from a JSON or INI (not YAML) content
+    // - backward compatibility method - do not use any more but LoadFromText()
+    // or the explicit LoadFromJsonText/LoadFromIniText/LoadFromYamlText methods
+    function LoadFromJson(const aContent: RawUtf8;
+      const aSectionName: RawUtf8 = 'Main'): boolean;
+    {$endif PUREMORMOT2}
+    /// read existing settings from a JSON content
+    // - misleading LoadFromJson() is kept for backward compatibility purposes
+    function LoadFromJsonText(const aJson: RawUtf8): boolean;
+    /// read existing settings from a INI content
+    function LoadFromIniText(const aIni, aSectionName: RawUtf8): boolean;
+    /// read existing settings from a YAML content
+    // - since YAML
+    function LoadFromYamlText(const aYaml: RawUtf8): boolean;
+    /// read existing settings from a JSON or INI or YAML file
+    // - will guess the format for the .json .ini .yaml file extension, or
+    // fallback to LoadFromText() to recognize JSON variants and INI format
     function LoadFromFile(const aFileName: TFileName;
       const aSectionName: RawUtf8 = 'Main'): boolean; virtual;
     /// just a wrapper around ExtractFilePath(FileName);
     function FolderName: TFileName;
     /// persist the settings as a JSON file, named from LoadFromFile() parameter
     // - will use the INI format if it was used at loading, or fsoWriteIni is set
+    // - will use the YAML format if it was used at loading, or fsoWriteYaml is set
     // - return TRUE if file has been modified, FALSE if was not needed or failed
     function SaveIfNeeded: boolean; virtual;
     /// optional persistence file name, as set by LoadFromFile()
@@ -629,9 +653,9 @@ type
     property IniOptions: TIniFeatures
       read fIniOptions write fIniOptions;
     /// can be used to compare two instances original file content
-    // - will use DefaultHasher, so hash could change after process restart
+    // - will use DefaultHashTrim() so value could change after process restart
     property InitialFileHash: cardinal
-      read fInitialFileHash write fInitialFileHash;
+      read fCurrentHash write fCurrentHash;
   end;
   /// meta-class definition of TSynJsonFileSettings
   TSynJsonFileSettingsClass = class of TSynJsonFileSettings;
@@ -4562,45 +4586,85 @@ begin
   fIniOptions := [ifClassSection, ifClassValue, ifMultiLineSections, ifArraySection];
 end;
 
-function TSynJsonFileSettings.AfterLoad: boolean;
+function TSynJsonFileSettings.AfterLoad(const aText: RawUtf8): boolean;
 begin
+  fCurrentContent := aText;
+  fCurrentHash := DefaultHashTrim(aText);
   result := true; // success
 end;
 
-function TSynJsonFileSettings.LoadFromJson(const aJson: RawUtf8;
+function TSynJsonFileSettings.LoadFromJsonText(const aJson: RawUtf8): boolean;
+begin
+  result := JsonSettingsToObject(aJson, self) and // recognize HJson/JSON5
+            AfterLoad(aJson);
+end;
+
+function TSynJsonFileSettings.LoadFromIniText(const aIni, aSectionName: RawUtf8): boolean;
+begin
+  fSectionName := aSectionName; // to be used when writing
+  result := IniToObject(aIni, self, aSectionName, @JSON_[mFastFloat], 0, fIniOptions);
+  if not result then
+    exit;
+  include(fSettingsOptions, fsoWriteIni); // save back as INI
+  result := AfterLoad(aIni);
+end;
+
+function TSynJsonFileSettings.LoadFromYamlText(const aYaml: RawUtf8): boolean;
+var
+  json: RawUtf8;
+begin
+  result := TryYamlToJson(aYaml, json) and
+            JsonSettingsToObject(json, self);
+  if not result then
+    exit;
+  include(fSettingsOptions, fsoWriteYaml); // save back as YAML
+  result := AfterLoad(aYaml);
+end;
+
+function TSynJsonFileSettings.LoadFromText(const aContent: RawUtf8;
   const aSectionName: RawUtf8): boolean;
 begin
   if fsoReadIni in fSettingsOptions then
   begin
-    fSectionName := aSectionName;
-    result := false;
+    result := LoadFromIniText(aContent, aSectionName); // only INI
+    include(fSettingsOptions, fsoWriteIni); // save back as INI
   end
   else
-    result := JsonSettingsToObject(aJson, self); // supports also json5/jsonH
-  if not result then
-  begin
-    result := IniToObject(aJson, self, aSectionName, @JSON_[mFastFloat], 0, fIniOptions);
-    if result then
-    begin
-      fSectionName := aSectionName;
-      include(fSettingsOptions, fsoWriteIni); // save back as INI
-    end;
-  end;
-  if result then
-    result := AfterLoad;
+    result := LoadFromJsonText(aContent) or
+              LoadFromIniText(aContent, aSectionName); // fallback to INI
 end;
+
+{$ifndef PUREMORMOT2}
+function TSynJsonFileSettings.LoadFromJson(const aContent: RawUtf8;
+  const aSectionName: RawUtf8): boolean;
+begin
+  result := LoadFromText(aContent, aSectionName);
+end;
+{$endif PUREMORMOT2}
 
 function TSynJsonFileSettings.LoadFromFile(const aFileName: TFileName;
   const aSectionName: RawUtf8): boolean;
+var
+  text: RawUtf8;
 begin
+  fCurrentContent := ''; // ignore file neither valid JSON nor INI/YAML
+  fCurrentHash := 0;
   fFileName := aFileName;
-  fInitialJsonContent := RawUtf8FromFile(aFileName); // may detect BOM
-  fInitialFileHash := DefaultHash(fInitialJsonContent);
-  result := LoadFromJson(fInitialJsonContent, aSectionName);
-  if result then
-    exit; // success
-  fInitialJsonContent := ''; // file was neither valid JSON nor INI: ignore
-  fInitialFileHash := 0;
+  text := RawUtf8FromFile(aFileName); // may detect BOM
+  if text = '' then
+    result := false
+  else
+    case SameExt(aFileName,
+        ['yaml', 'yml', 'ini', 'json', 'jsonc', 'json5', 'hjson'], true) of
+      0, 1:
+        result := LoadFromYamlText(text);
+      2:
+        result := LoadFromIniText(text, aSectionName);
+      3 .. 6:
+        result := LoadFromJsonText(text);
+    else
+      result := LoadFromText(text, aSectionName); // detect JSON or INI
+    end;
 end;
 
 function TSynJsonFileSettings.FolderName: TFileName;
@@ -4622,23 +4686,25 @@ begin
      (fsoDisableSaveIfNeeded in fSettingsOptions) then
     exit;
   opt := SETTINGS_WRITEOPTIONS;
-  if fsoNoEnumsComment in fSettingsOptions then
+  if fSettingsOptions * [fsoNoEnumsComment, fsoWriteYaml, fsoWriteIni] <> [] then
     exclude(opt, woHumanReadableEnumSetAsComment);
   if fsoWriteIni in fSettingsOptions then
     saved := ObjectToIni(self, fSectionName, opt, 0, fIniOptions)
   else
   begin
     saved := ObjectToJson(self, opt);
-    if fsoWriteHjson in fSettingsOptions then
+    if fsoWriteYaml in fSettingsOptions then
+      saved := JsonToYaml(saved)
+    else if fsoWriteHjson in fSettingsOptions then
       saved := JsonReformat(saved, jsonH); // very human friendly
   end;
-  if saved = fInitialJsonContent then
-    exit;
+  if saved = fCurrentContent then
+    exit; // don't rewrite the same content on disk
   result := FileFromString(saved, fFileName);
   if not result then
     exit;
-  fInitialJsonContent := saved;
-  fInitialFileHash := DefaultHash(saved);
+  fCurrentContent := saved;
+  fCurrentHash := DefaultHashTrim(saved);
 end;
 
 
