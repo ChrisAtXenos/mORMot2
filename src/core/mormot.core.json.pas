@@ -204,6 +204,7 @@ function IsNumberJson(P: PUtf8Char): boolean;
 
 /// test if the supplied buffer is a valid JSON true/false boolean with no space
 function IsBooleanJson(P: PUtf8Char; V: PBoolean = nil): boolean;
+  {$ifdef HASINLINE} inline; {$endif}
 
 /// test if the supplied buffer is a valid JSON constant or number
 function IsConstantOrNumberJson(P: PUtf8Char; len: PtrUInt): boolean;
@@ -5260,8 +5261,7 @@ begin
     AddCRAndIndent;
 end;
 
-procedure TJsonWriter.BlockBegin(Starter: AnsiChar;
-  Options: TTextWriterWriteObjectOptions);
+procedure TJsonWriter.BlockBegin(Starter: AnsiChar; Options: TTextWriterWriteObjectOptions);
 begin
   if woHumanReadable in Options then
   begin
@@ -5271,8 +5271,7 @@ begin
   Add(Starter);
 end;
 
-procedure TJsonWriter.BlockEnd(Stopper: AnsiChar;
-  Options: TTextWriterWriteObjectOptions);
+procedure TJsonWriter.BlockEnd(Stopper: AnsiChar; Options: TTextWriterWriteObjectOptions);
 begin
   if woHumanReadable in Options then
   begin
