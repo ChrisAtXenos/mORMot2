@@ -180,19 +180,19 @@ type
     procedure ExpectRaise(const Name, Yaml: RawUtf8);
   published
     /// parse YAML happy paths and compare TDocVariantData.ToJson
-    procedure _ParseGolden;
+    procedure ParseGoldenReferences;
     /// parse then serialize then parse, compare equivalence
-    procedure _Roundtrip;
+    procedure Roundtrip;
     /// unsupported constructs must raise EYamlException with line info
-    procedure _ErrorCases;
+    procedure ErrorCases;
     /// YamlFileToVariant reads via OS file I/O
-    procedure _FileApi;
+    procedure FileApi;
     /// pathological deep nesting must raise EYamlException, not EStackOverflow
     // - covers the Stripe 6 MB spec3 public stress-test failure mode
-    procedure _RecursionDepth;
+    procedure RecursionDepth;
     /// an OpenAPI-shaped spec in YAML must yield the same TDocVariantData
     // as its JSON counterpart - this is the invariant mopenapi relies on
-    procedure _OpenApiEquivalence;
+    procedure OpenapiEquivalence;
   end;
 
   /// this test case will test most functions, classes and types defined and
@@ -2377,7 +2377,7 @@ var
       Check(t.simple = nil);
       u := '[global]'#13#10'prop1=test'#13#10#13#10 +
            '[other]'#13#10'prop2=other'#13#10;
-      Check(t.LoadFromJson(u, 'Global'));
+      Check(t.LoadFromText(u, 'Global')); // should fallback and try INI format
       CheckEqual(t.prop1, 'test');
       CheckEqual(t.prop2, '');
       Check(t.simple = nil);
@@ -2388,7 +2388,7 @@ var
       Append(u, '[simple 1]'#13#10'FullName = fn1'#13#10 +
                 '[simples]'#13#10'FullName=fn'#13#10 + // ignored
                 '[simple.two]'#13#10'FullName = fn 2'#13#10);
-      Check(t.LoadFromJson(u, 'Global'));
+      Check(t.LoadFromText(u, 'Global'));
       CheckEqual(t.prop1, 'test');
       CheckEqual(t.prop2, '');
       if CheckEqual(length(t.simple), 2, 't.simple') then
@@ -8785,7 +8785,7 @@ begin
   CheckRaised(RunYaml, [Yaml], EYamlException, Name);
 end;
 
-procedure TTestCoreYaml._ParseGolden;
+procedure TTestCoreYaml.ParseGoldenReferences;
 var
   i: PtrInt;
 begin
@@ -8793,7 +8793,7 @@ begin
     RunGolden(GOLDEN[i].Name, GOLDEN[i].Yaml, GOLDEN[i].ExpectedJson);
 end;
 
-procedure TTestCoreYaml._Roundtrip;
+procedure TTestCoreYaml.Roundtrip;
 var
   i: PtrInt;
   doc1, doc2: TDocVariantData;
@@ -8819,7 +8819,7 @@ begin
   end;
 end;
 
-procedure TTestCoreYaml._ErrorCases;
+procedure TTestCoreYaml.ErrorCases;
 var
   i: PtrInt;
 begin
@@ -8827,7 +8827,7 @@ begin
     ExpectRaise(Join([' for ', ERRORS[i].Name]), ERRORS[i].Yaml);
 end;
 
-procedure TTestCoreYaml._FileApi;
+procedure TTestCoreYaml.FileApi;
 var
   fn: TFileName;
   doc: TDocVariantData;
@@ -8845,9 +8845,9 @@ begin
   CheckRaised(RunFile, [WorkDir + 'does.not.exist.yaml'], EYamlException,
     'file-not-found must raise EYamlException');
   // BOM must be stripped from file content
-  Join([BOM_UTF8_CHARS, 'a: 1'], yamlBom);
+  Join([BOM_UTF8_CHARS, 'a: 1'#10#10], yamlBom);
   Check(PCardinal(yamlBom)^ and $ffffff = BOM_UTF8, 'bom');
-  Check(FileFromString('a: 1'#10#10, fn));
+  Check(FileFromString(yamlBom, fn));
   try
     doc.Clear;
     Check(TryYamlFileToVariant(fn, doc), 'TryYamlFileToVariant bom');
@@ -8857,7 +8857,7 @@ begin
   end;
 end;
 
-procedure TTestCoreYaml._RecursionDepth;
+procedure TTestCoreYaml.RecursionDepth;
 var
   i: PtrInt;
   yaml, indent: RawUtf8;
@@ -8885,7 +8885,7 @@ begin
   end;
 end;
 
-procedure TTestCoreYaml._OpenApiEquivalence;
+procedure TTestCoreYaml.OpenapiEquivalence;
 const
   // a compact OpenAPI 3.0 slice exercising: nested maps, arrays, $ref,
   // numeric-looking keys (the "200" response code) and boolean properties
