@@ -4395,7 +4395,7 @@ begin
   log := fLogClass.Add;
   log.Log(sllTrace, 'RefreshBlackListUriExecute %', [fBlackListUri], self);
   status := 0;
-  list := HttpGetWeak(fBlackListUri, '', @status);
+  list := HttpGetWeak(fBlackListUri, '', @status); // TODO: use etag + 304
   log.Log(sllTrace, 'RefreshBlackListUriExecute=% %', [status, KB(list)], self);
   if list = '' then
   begin

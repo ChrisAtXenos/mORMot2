@@ -1816,7 +1816,7 @@ begin
     fOut.Add(bval)
   else if TryYamlInt(pointer(s), ival) then     // normalize 0x 0o integers
     fOut.Add(ival)
-  else if TextToVariantNumberType(pointer(s)) <> varString then
+  else if IsNumberJson(pointer(s)) then
     fOut.AddNoJsonEscape(pointer(s), length(s)) // valid JSON number
   else
     EmitJsonString(s);
@@ -2924,19 +2924,18 @@ begin
   p := pointer(S);
   if p = nil then
     fOut.AddShorter('""')
-  else if
-      // leading chars that need quoting
-      (p^ in [' ', #9, '!', '&', '*', '>', '|', '%', '@', '`', '"', '''',
-              '#', '-', '?', ':', '{', '[', '}', ']', ',']) or
-      // trailing whitespace triggers quotes
-      (p[length(S) - 1] in [' ', #9]) or
-      // reserved plain-scalar forms: null, bool, numbers - must be quoted to
-      // preserve string type on round-trip
-      IsYamlNull(p) or
-      IsBooleanJson(p) or
-      (TextToVariantNumberType(p) <> varString) or
-      // scan for chars that require escape
-      YamlSpecialChars(p) then
+  else if // leading chars that need quoting
+          (p^ in [' ', #9, '!', '&', '*', '>', '|', '%', '@', '`', '"', '''',
+                  '#', '-', '?', ':', '{', '[', '}', ']', ',']) or
+          // trailing whitespace triggers quotes
+          (p[length(S) - 1] in [' ', #9]) or
+          // reserved plain-scalar forms: null, bool, numbers - must be quoted
+          // to preserve string type on round-trip
+          IsYamlNull(p) or
+          IsBooleanJson(p) or
+          IsNumberJson(p) or
+          // quick scan for chars that require escape
+          YamlSpecialChars(p) then
     // emit as JSON-escaped double-quoted string - valid YAML 1.2 §5.7
     // since the JSON escape set is a subset of YAML's flow-scalar escapes
     fOut.AddJsonString(S)
