@@ -4396,6 +4396,7 @@ begin
   // TDocVariant no guess in 691.16ms i.e. 2.2M/s, 283.6 MB/s
   CheckEqual(DocVariantType.InternNames.Count, interned, 'no intern');
   DocVariantType.InternNames.Clean;
+  CheckEqual(DocVariantType.InternNames.Count, 0, 'clean');
   timer.Start;
   for i := 1 to ITER do
   begin
