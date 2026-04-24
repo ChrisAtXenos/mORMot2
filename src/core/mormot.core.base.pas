@@ -3307,8 +3307,10 @@ procedure TrimU(const S: RawUtf8; var Dest: RawUtf8); overload;
 procedure TrimSelf(var S: RawUtf8);
 
 /// single-allocation (therefore faster) alternative to Trim(copy())
-procedure TrimCopy(const S: RawUtf8; start, count: PtrInt;
-  var result: RawUtf8);
+procedure TrimCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
+
+/// internal function used by TrimCopy/TrimLeftCopy/TrimRightCopy wrappers
+procedure TrimCopyAssign(P: PAnsiChar; start, len: PtrInt; var result: RawUtf8);
 
 /// faster dedicated RawUtf8 version of delete(s, 1, 1) to avoid realloc
 procedure TrimFirstChar(var S: RawUtf8);
@@ -9951,8 +9953,19 @@ begin
 end;
 {$endif PUREMORMOT2}
 
-procedure TrimCopy(const S: RawUtf8; start, count: PtrInt;
-  var result: RawUtf8); // faster alternative to TrimU(copy())
+procedure TrimCopyAssign(P: PAnsiChar; start, len: PtrInt; var result: RawUtf8);
+begin // caller ensured P <> nil and points to original S: RawUtf8
+  if len > 0 then
+    if (start = 0) and
+       (len = PStrLen(P - _STRLEN)^) then
+      result := RawUtf8(pointer(P)) // no memory allocation needed
+    else
+      FastSetString(result, P + start, len)
+  else
+    FastAssignNew(result); // done last because result could point to S
+end;
+
+procedure TrimCopy(const S: RawUtf8; start, count: PtrInt; var result: RawUtf8);
 var
   len: PtrInt;
 begin
@@ -9962,27 +9975,24 @@ begin
       start := 1;
     len := Length(S);
     while (start <= len) and
-          (S[start] <= ' ') do
+          (S[start] <= ' ') do // trim left
     begin
       inc(start);
       dec(count);
     end;
     dec(start);
-    dec(len,start);
+    dec(len, start);
     if count < len then
       len := count;
     while len > 0 do
-      if S[start + len] <= ' ' then
+      if S[start + len] <= ' ' then // trim right
         dec(len)
       else
         break;
-    if len > 0 then
-    begin
-      FastSetString(result, @PByteArray(S)[start], len);
-      exit;
-    end;
-  end;
-  FastAssignNew(result); // done last becase result could point to S
+  end
+  else
+    len := 0;
+  TrimCopyAssign(pointer(S), start, len, result);
 end;
 
 function Split(const Str, SepStr: RawUtf8; StartPos: PtrInt): RawUtf8;
