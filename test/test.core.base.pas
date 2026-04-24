@@ -5627,11 +5627,15 @@ procedure TTestCoreBase.Utf8Slow(Context: TObject);
   var
     t, c, u: RawUtf8;
   begin
-    trimcopy(S, start, count, t);
     c := copy(S, start, count);
+    TrimCopy(S, start, count, t);
     CheckEqual(t, TrimU(c));
     TrimU(c, u);
     CheckEqual(t, u);
+    TrimLeftCopy(S, start, count, t);
+    CheckEqual(t, TrimLeft(c));
+    TrimRightCopy(S, start, count, t);
+    CheckEqual(t, TrimRight(c));
   end;
 
 var
