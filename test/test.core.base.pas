@@ -5087,10 +5087,32 @@ begin
   CheckDoubleToShortSame(12.345678901234);
   CheckDoubleToShortSame(123.45678901234);
   CheckDoubleToShortSame(1234.5678901234);
-  Check(Int32ToUtf8(1599638299) = '1599638299');
-  Check(UInt32ToUtf8(1599638299) = '1599638299');
-  Check(Int32ToUtf8(-1599638299) = '-1599638299');
-  Check(Int64ToUtf8(-1271083787498396012) = '-1271083787498396012');
+  CheckEqual(TextToVariantNumberType('1'), varInt64);
+  CheckEqual(TextToVariantNumberType('10'), varInt64);
+  CheckEqual(TextToVariantNumberType('01'), varString);
+  CheckEqual(TextToVariantNumberType(' 1'), varString);
+  CheckEqual(TextToVariantNumberType('1.'), varString);
+  CheckEqual(TextToVariantNumberType('1.1'), varCurrency);
+  CheckEqual(TextToVariantNumberType('1.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberType('1234.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberType('1234.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberType('1234.12345'), varDouble);
+  CheckEqual(TextToVariantNumberType('1234e+45'), varDouble);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1'), varInt64);
+  CheckEqual(TextToVariantNumberTypeNoDouble('10'), varInt64);
+  CheckEqual(TextToVariantNumberTypeNoDouble('01'), varString);
+  CheckEqual(TextToVariantNumberTypeNoDouble(' 1'), varString);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1.'), varString);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1.1'), varCurrency);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1234.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1234.1234'), varCurrency);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1234.12345'), varString);
+  CheckEqual(TextToVariantNumberTypeNoDouble('1234e+45'), varString);
+  CheckEqual(Int32ToUtf8(1599638299), '1599638299');
+  CheckEqual(UInt32ToUtf8(1599638299), '1599638299');
+  CheckEqual(Int32ToUtf8(-1599638299), '-1599638299');
+  CheckEqual(Int64ToUtf8(-1271083787498396012), '-1271083787498396012');
   CheckEqual(Int64ToUtf8(242161819595454762), '242161819595454762');
   // detect 64-bit integer overflow in GetExtended()
   CheckDoubleToShort(95.0290695380, '95.029069538');
@@ -5205,6 +5227,8 @@ begin
     CheckEqual(TestAddFloatStr(s), s);
     Check(SysUtils.IntToStr(j) = u);
     s2 := Int32ToUtf8(j);
+    Check(TextToVariantNumberType(pointer(s2)) = varInt64);
+    Check(TextToVariantNumberTypeNoDouble(pointer(s2)) = varInt64);
     CheckEqual(s2, s);
     Check(format('%d', [j]) = u);
     Check(GetInteger(pointer(s)) = j);
@@ -5344,6 +5368,10 @@ begin
     e := GetExtended(Pointer(s), err);
     Check(err = 0, 'GetExt2');
     Check(SameValue(e, d, 0));
+    err := TextToVariantNumberType(pointer(s));
+    if CheckFailed(err in [varDouble, varCurrency], 'TextToVariantNumberType') then
+      NotifyProgress(['TextToVariantNumberType(', s, ')=', err], ccLightRed);
+    Check(TextToVariantNumberTypeNoDouble(pointer(s)) = varString);
     e := d;
     if (i < 9000) or
        (i > 9999) then
