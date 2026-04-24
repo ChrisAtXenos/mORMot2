@@ -100,6 +100,8 @@ type
     function DoRequest4(Ctxt: THttpServerRequestAbstract): cardinal;
     // this is the main method called by RtspOverHttp[BufferedWrite]
     procedure DoRtspOverHttp(options: TAsyncConnectionsOptions);
+    // helper invoked from OpenAPI to verify YAML dispatch
+    procedure OpenApiYamlDispatch;
   published
     /// Engine.IO and Socket.IO regression tests
     procedure _SocketIO;
@@ -129,9 +131,6 @@ type
     /// validate mormot.net.tftp.server using libcurl (so only POSIX by now)
     procedure TFTPServer;
     {$endif OSPOSIX}
-  protected
-    // helper invoked from OpenAPI to verify YAML dispatch
-    procedure _OpenApiYamlDispatch;
   end;
 
 
@@ -311,7 +310,10 @@ begin
   for i := 0 to high(OpenApiName) do
     if OpenApiName[i] <> '' then
     begin
-      fn := FormatString('%OpenApi%.json', [WorkDir, OpenApiName[i]]);
+      fn := '';
+      if PosExChar('.', OpenApiName[i]) = 0 then
+        fn := '.json';
+      fn := FormatString('%OpenApi%%', [WorkDir, OpenApiName[i], fn]);
       api[i] := StringFromFile(fn);
       if api[i] <> '' then
         continue; // already downloaded
@@ -359,7 +361,7 @@ begin
   // for a YAML spec and its JSON counterpart when consumed via ParseYaml/
   // ParseFile. Covers the spec-approved invariant behind mopenapi's .yaml
   // support.
-  _OpenApiYamlDispatch;
+  OpenApiYamlDispatch;
 end;
 
 procedure TNetworkProtocols.OpenApiYamlDispatch;
@@ -391,45 +393,43 @@ const
     '"components":{"schemas":{"Info":{"type":"object",' +
     '"properties":{"name":{"type":"string"}}}}}}';
 var
-  oaYaml, oaJson, oaFile: TOpenApiParser;
+  oaY, oaJ, oaF: TOpenApiParser;
   dtoY, dtoJ, dtoF, clientY, clientJ, clientF: RawUtf8;
   fn: TFileName;
 begin
-  oaYaml := TOpenApiParser.Create('DispatchYaml');
-  oaJson := TOpenApiParser.Create('DispatchJson');
-  oaFile := TOpenApiParser.Create('DispatchFile');
+  oaY := TOpenApiParser.Create('DispatchTest');
+  oaJ := TOpenApiParser.Create('DispatchTest');
+  oaF := TOpenApiParser.Create('DispatchTest');
   try
-    oaYaml.ParseYaml(YAML_SPEC);
-    oaJson.ParseJson(JSON_SPEC);
-    dtoY := oaYaml.GenerateDtoUnit;
-    dtoJ := oaJson.GenerateDtoUnit;
-    clientY := oaYaml.GenerateClientUnit;
-    clientJ := oaJson.GenerateClientUnit;
-    // the spec's actual names differ (DispatchYaml vs DispatchJson), so we
-    // only check that both produced identical shape with the name swapped
+    oaY.ParseYaml(YAML_SPEC);
+    oaJ.ParseJson(JSON_SPEC);
+    dtoY := oaY.GenerateDtoUnit;
+    dtoJ := oaJ.GenerateDtoUnit;
+    CheckEqual(dtoY, dtoJ);
     Check(dtoY <> '', 'yaml dto');
     Check(dtoJ <> '', 'json dto');
+    clientY := oaY.GenerateClientUnit;
+    clientJ := oaJ.GenerateClientUnit;
+    CheckEqual(clientY, clientJ);
     Check(clientY <> '', 'yaml client');
     Check(clientJ <> '', 'json client');
-    CheckEqual(length(dtoY), length(dtoJ), 'dto length yaml vs json');
-    CheckEqual(length(clientY), length(clientJ), 'client length yaml vs json');
     // ParseFile with .yaml extension must dispatch to the YAML path
     fn := WorkDir + 'test.openapi.dispatch.yaml';
     FileFromString(YAML_SPEC, fn);
     try
-      oaFile.Name := 'DispatchYaml'; // match oaYaml so outputs are comparable
-      oaFile.ParseFile(fn);
-      dtoF := oaFile.GenerateDtoUnit;
-      clientF := oaFile.GenerateClientUnit;
+      oaF.Name := 'DispatchTest'; // match oaY so outputs are comparable
+      oaF.ParseFile(fn);
+      dtoF := oaF.GenerateDtoUnit;
+      clientF := oaF.GenerateClientUnit;
       CheckEqual(dtoF, dtoY, 'ParseFile(.yaml) dto must equal ParseYaml');
       CheckEqual(clientF, clientY, 'ParseFile(.yaml) client must equal ParseYaml');
     finally
       DeleteFile(fn);
     end;
   finally
-    oaYaml.Free;
-    oaJson.Free;
-    oaFile.Free;
+    oaY.Free;
+    oaJ.Free;
+    oaF.Free;
   end;
 end;
 
