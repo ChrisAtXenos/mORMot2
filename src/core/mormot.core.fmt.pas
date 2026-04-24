@@ -2166,10 +2166,10 @@ begin
     keyEnd := LineKeyEnd(c^.Content);
     if keyEnd < 0 then
       break;
-    keyText := TrimRight(copy(c^.Content, 1, keyEnd));
+    TrimRightCopy(c^.Content, 1, keyEnd, keyText);
     rest := '';
     if keyEnd + 1 < length(c^.Content) then
-      rest := TrimLeft(copy(c^.Content, keyEnd + 2, MaxInt));
+      TrimLeftCopy(c^.Content, keyEnd + 2, MaxInt, rest);
     if not first then
       fOut.AddDirect(',');
     EmitKey(keyText);
@@ -2311,10 +2311,10 @@ begin
   keyEnd := LineKeyEnd(firstEntry);
   if keyEnd < 0 then
     Error(firstLineIdx, 'expected mapping entry after "- "');
-  keyText := TrimRight(copy(firstEntry, 1, keyEnd));
+  TrimRightCopy(firstEntry, 1, keyEnd, keyText);
   rest := '';
   if keyEnd + 1 < length(firstEntry) then
-    rest := TrimLeft(copy(firstEntry, keyEnd + 2, MaxInt));
+    TrimLeftCopy(firstEntry, keyEnd + 2, MaxInt, rest);
   EmitKey(keyText);
   fOut.AddDirect(':');
   if (rest = '') or (rest[1] = '#') then
@@ -2366,10 +2366,10 @@ begin
     keyEnd := LineKeyEnd(lineContent);
     if keyEnd < 0 then
       break;
-    keyText := TrimRight(copy(lineContent, 1, keyEnd));
+    TrimRightCopy(lineContent, 1, keyEnd, keyText);
     rest := '';
     if keyEnd + 1 < length(lineContent) then
-      rest := TrimLeft(copy(lineContent, keyEnd + 2, MaxInt));
+      TrimLeftCopy(lineContent, keyEnd + 2, MaxInt, rest);
     fOut.AddDirect(',');
     EmitKey(keyText);
     fOut.AddDirect(':');
