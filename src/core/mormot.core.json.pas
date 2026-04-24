@@ -199,6 +199,12 @@ function IsStringJson(P: PUtf8Char): boolean; overload;
 /// test if the supplied buffer is NOT a valid JSON constant or number
 function IsStringJson(P: PUtf8Char; len: PtrInt): boolean; overload;
 
+/// test if the supplied buffer is a valid JSON number with no trailing space
+function IsNumberJson(P: PUtf8Char): boolean;
+
+/// test if the supplied buffer is a valid JSON true/false boolean with no space
+function IsBooleanJson(P: PUtf8Char; V: PBoolean = nil): boolean;
+
 /// test if the supplied buffer is a valid JSON constant or number
 function IsConstantOrNumberJson(P: PUtf8Char; len: PtrUInt): boolean;
 
@@ -2190,7 +2196,8 @@ function JsonNormalizeToObject(var ObjectInstance; const From: RawUtf8;
   Interning: TRawUtf8Interning = nil): boolean;
 
 /// parse the supplied JSON with high tolerance about Settings format
-// - alias to JsonNormalizeToObject() with JSONPARSER_TOLERANTOPTIONS
+// - alias to JsonNormalizeToObject() with JSONPARSER_TOLERANTOPTIONS, so
+// will support standard JSON, but also JSON5, JSONC or HJson variations
 function JsonSettingsToObject(const JsonContent: RawUtf8; Instance: TObject): boolean;
 
 /// read an object properties, as saved by ObjectToJson function
@@ -3599,6 +3606,47 @@ begin
             (len = 0) or
             ((not IsConstantJson(P, len)) and
              (GotoEndJsonItemNumber(P) - P = len));
+end;
+
+function IsNumberJson(P: PUtf8Char): boolean;
+begin
+  if P <> nil then
+  begin
+    if P^ = '-' then
+      inc(P);
+    if ((P^ >= '1') and (P^ <= '9')) or // is first char numeric?
+       ((P^ = '0') and ((P[1] < '0') or (P[1] > '9'))) then // no '012'
+      if GotoEndRawNumber(P)^ = #0 then
+      begin
+        result := true;
+        exit;
+      end;
+  end;
+  result := false;
+end;
+
+function IsBooleanJson(P: PUtf8Char; V: PBoolean): boolean;
+begin
+  if P <> nil then
+    case PInteger(P)^ of
+      TRUE_LOW:
+        if P[4] = #0 then
+        begin
+          if V <> nil then
+            V^ := true;
+          result := true;
+          exit;
+        end;
+      FALSE_LOW:
+        if PWord(P + 4)^ = ord('e') then
+        begin
+          if V <> nil then
+            V^ := false;
+          result := true;
+          exit;
+        end;
+    end;
+  result := false;
 end;
 
 function IsConstantOrNumberJson(P: PUtf8Char; len: PtrUInt): boolean;
