@@ -206,6 +206,12 @@ type
     /// read-only access to the handle number associated with this connection
     property Handle: TConnectionAsyncHandle
       read fHandle;
+    /// how many incoming bytes are currently pending in this connection memory buffer
+    property PendingRead: PtrInt
+      read fRd.Len;
+    /// how many outgoing bytes are currently pending in this connection memory buffer
+    property PendingWrite: PtrInt
+      read fWr.Len;
   end;
 
   /// thread-safe storage of several connections
