@@ -175,7 +175,7 @@ procedure YamlToVariant(const Yaml: RawUtf8; out Doc: TDocVariantData;
 /// convenient wrapper called e.g. by TOpenApiParser.ParseYaml()
 // - will catch internally any EYamlException and return false on failure
 function TryYamlToVariant(const Yaml: RawUtf8;
-  out Doc: TDocVariantData): boolean;
+  out Doc: TDocVariantData; Options: TDocVariantOptions = JSON_YAML): boolean;
 
 /// parse a YAML file into a TDocVariantData
 // - file is expected to be UTF-8 (BOM tolerated); see YamlToVariant
@@ -210,8 +210,8 @@ function TryYamlToJson(const Yaml: RawUtf8; out Json: RawUtf8): boolean;
 /// convert JSON UTF-8 text into YAML 1.2 UTF-8 text
 // - pipes the JSON through TDocVariantData then VariantToYaml
 // - useful for converting existing JSON settings files or API payloads to YAML
-function JsonToYaml(const Json: RawUtf8;
-  Options: TYamlWriterOptions = []): RawUtf8;
+function JsonToYaml(const Json: RawUtf8; Options: TYamlWriterOptions = [];
+  DocOptions: TDocVariantOptions = JSON_YAML): RawUtf8;
 
 var
   /// maximum YAML nesting depth before the parser raises EYamlException
@@ -2844,11 +2844,11 @@ begin
 end;
 
 function TryYamlToVariant(const Yaml: RawUtf8;
-  out Doc: TDocVariantData): boolean;
+  out Doc: TDocVariantData; Options: TDocVariantOptions): boolean;
 // convenience alias preserving mormot.net.openapi's exact options set
 begin
   try
-    YamlToVariant(Yaml, Doc, JSON_FAST + [dvoInternNames]);
+    YamlToVariant(Yaml, Doc, Options);
     result := true;
   except
     result := false;
@@ -3113,11 +3113,12 @@ begin
   end;
 end;
 
-function JsonToYaml(const Json: RawUtf8; Options: TYamlWriterOptions): RawUtf8;
+function JsonToYaml(const Json: RawUtf8; Options: TYamlWriterOptions;
+  DocOptions: TDocVariantOptions): RawUtf8;
 var
   doc: TDocVariantData;
 begin
-  if doc.InitJson(Json, JSON_YAML) then
+  if doc.InitJson(Json, DocOptions) then
     result := VariantToYaml(variant(doc), Options)
   else
     result := '';
