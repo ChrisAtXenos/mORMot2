@@ -1610,7 +1610,7 @@ type
     Safe: TRWLightLock;
     /// the wrapper to a dynamic array
     DynArray: TDynArray;
-    /// will store the length of the TDynArray
+    /// will store the length of the TDynArray - should not be a PtrInt
     Count: integer;
   end;
 
