@@ -1112,7 +1112,7 @@ type
   // use its own separated thread
   TSynBackgroundTimer = class(TSynBackgroundThreadProcess)
   protected
-    fSafe: TLightLock; // seems enough for our light process
+    fSafe: TLightLock; // seems enough - TOSLightLock is more than twice slower
     fTask: TSynBackgroundTimerTasks;
     fTaskCount: integer;
     fTasks: TDynArray;
@@ -3440,7 +3440,7 @@ end;
 procedure TSynBackgroundTimer.EverySecond(Sender: TSynBackgroundThreadProcess);
 var
   tix: Int64;
-  i: PtrInt;
+  i: integer;
   t, todo: PSynBackgroundTimerTask;
 begin
   if (fTask = nil) or
@@ -3465,7 +3465,6 @@ begin
               SetLength(fTodo, NextGrow(fTaskCount));
             todo := pointer(fTodo);
           end;
-          // copy this pending task into our local todo[] array
           todo^ := t^;
           inc(todo);
           if t^.MilliSecs < 0 then
@@ -3534,6 +3533,7 @@ end;
 
 const
   TIXPRECISION = 32; // GetTickCount64 resolution (for aOnProcessSecs=1)
+  NO_MSG: RawUtf8 = '-nomsg-'; // hidden place holder for ExecuteNow()
 
 procedure TSynBackgroundTimer.Enable(
   const aOnProcess: TOnSynBackgroundTimerProcess; aOnProcessSecs: integer);
@@ -3574,7 +3574,7 @@ end;
 function TSynBackgroundTimer.ExecuteNow(
   const aOnProcess: TOnSynBackgroundTimerProcess): boolean;
 begin
-  result := Add(aOnProcess, #0, true);
+  result := Add(aOnProcess, NO_MSG, true);
 end;
 
 function TSynBackgroundTimer.ExecuteOnce(
@@ -3584,7 +3584,7 @@ begin
             Assigned(self);
   if not result then
     exit;
-  Enable(aOnProcess, -1);
+  Enable(aOnProcess, {Secs=}-1);
   Add(aOnProcess, 'Once', true);
 end;
 
@@ -3621,17 +3621,16 @@ begin
     t := Find(TMethod(aOnProcess));
     if t = nil then
       exit;
-    if aMsg <> #0 then
+    if pointer(aMsg) <> pointer(NO_MSG) then
       AddRawUtf8(t^.Msg, t^.MsgCount, aMsg);
     if aExecuteNow then
-    begin
       t^.NextTix := 0;
-      fProcessEvent.SetEvent;
-    end;
     result := true;
   finally
     fSafe.UnLock;
   end;
+  if aExecuteNow then
+    fProcessEvent.SetEvent; // trigger outside of the lock to keep it short
 end;
 
 function TSynBackgroundTimer.DeQueue(
