@@ -2768,7 +2768,6 @@ type
     procedure WriteValue(const v: variant; Indent: PtrInt);
     procedure WriteBlockMap(const dv: TDocVariantData; Indent: PtrInt);
     procedure WriteBlockSeq(const dv: TDocVariantData; Indent: PtrInt);
-    procedure WriteScalar(const v: variant);
     procedure WriteYamlKey(const K: RawUtf8);
       {$ifdef HASINLINE} inline; {$endif}
     procedure WriteYamlString(const S: RawUtf8);
@@ -2839,74 +2838,59 @@ begin
   WriteYamlString(s);
 end;
 
-procedure TVariantToYaml.WriteScalar(const v: variant);
-var
-  vd: TVarData absolute v;
-  vt: cardinal;
-begin
-  vt := vd.VType;
-  if (vt <= varOleUInt) and
-     (vt <> varOleStr) then
-    // simple and numeric types share the same text form in JSON and YAML, so
-    // let TJsonWriter.AddVariant emit them directly without any escaping
-    fOut.AddVariant(v, twNone)
-  else if vt = varString then
-    // in a TDocVariant, strings are usually normalized as RawUtf8
-    WriteYamlString(RawUtf8(vd.VAny))
-  else
-    // string-like or unknown: coerce to UTF-8 and apply YAML quoting rules
-    WriteYamlVariantAsString(v);
-end;
-
 procedure TVariantToYaml.WriteBlockMap(const dv: TDocVariantData; Indent: PtrInt);
 var
   i: PtrInt;
+  v: PVariant;
   cd: PDocVariantData;
 begin
   if dv.Count = 0 then
   begin
-    fOut.AddShorter('{}');
+    fOut.AddShort4(ord('{') + ord('}') shl 8, 2);
     exit;
   end;
-  for i := 0 to dv.Count - 1 do
-  begin
-    if i > 0 then
-      WriteIndent(Indent);
+  i := 0;
+  v := pointer(dv.Values);
+  repeat
     WriteYamlKey(dv.Names[i]);
     fOut.AddDirect(':');
-    if _Safe(dv.Values[i], cd) and
+    if _Safe(v^, cd) and
        (cd^.Count > 0) then
     begin
       fOut.Add(#10);
       WriteIndent(Indent + 2);
-      WriteValue(dv.Values[i], Indent + 2);
+      WriteValue(v^, Indent + 2);
     end
     else
     begin
       fOut.Add(' ');
-      WriteValue(dv.Values[i], Indent + 2);
+      WriteValue(v^, Indent + 2);
     end;
-    if i < dv.Count - 1 then
-      fOut.Add(#10);
-  end;
+    inc(i);
+    if i = dv.Count then
+      break;
+    inc(v);
+    fOut.AddDirect(#10);
+    WriteIndent(Indent);
+  until false;
 end;
 
 procedure TVariantToYaml.WriteBlockSeq(const dv: TDocVariantData; Indent: PtrInt);
 var
   i: PtrInt;
+  v: PVariant;
   cd: PDocVariantData;
 begin
   if dv.Count = 0 then
   begin
-    fOut.AddShorter('[]');
+    fOut.AddShort4(ord('[') + ord(']') shl 8, 2);
     exit;
   end;
-  for i := 0 to dv.Count - 1 do
-  begin
-    if i > 0 then
-      WriteIndent(Indent);
+  i := 0;
+  v := pointer(dv.Values);
+  repeat
     fOut.AddShorter('- ');
-    if _Safe(dv.Values[i], cd) and
+    if _Safe(v^, cd) and
        (cd^.Count > 0) then
     begin
       // put child map/seq inline after the dash
@@ -2920,29 +2904,46 @@ begin
       end;
     end
     else
-      WriteValue(dv.Values[i], Indent + 2);
-    if i < dv.Count - 1 then
-      fOut.AddDirect(#10);
-  end;
+      WriteValue(v^, Indent + 2);
+    inc(i);
+    if i = dv.Count then
+      break;
+    inc(v);
+    fOut.AddDirect(#10);
+    WriteIndent(Indent);
+  until false;
 end;
 
 procedure TVariantToYaml.WriteValue(const v: variant; Indent: PtrInt);
 var
-  cd: PDocVariantData;
+  vd: PDocVariantData;
+  vt: cardinal;
 begin
-  if _Safe(v, cd) and
-     (cd^.Kind <> dvUndefined) then
-    if cd^.Count = 0 then
-      if cd^.Kind = dvArray then
-        fOut.AddShorter('[]')
-      else
-        fOut.AddShorter('{}')
-    else if cd^.Kind = dvObject then
-      WriteBlockMap(cd^, Indent)
+  vd := @v;
+  vt := vd^.VarType;
+  if vt = varVariantByRef then
+  begin
+    vd := PVarData(vd)^.VPointer;
+    vt := vd^.VarType;
+  end;
+  if (vt <= varOleUInt) and
+     (vt <> varOleStr) then
+    // simple and numeric types share the same text form in JSON and YAML, so
+    // let TJsonWriter.AddVariant emit them directly without any escaping
+    fOut.AddVariant(PVariant(vd)^, twNone)
+  else if vt = varString then
+    // in a TDocVariant, strings are usually normalized as RawUtf8
+    WriteYamlString(RawUtf8(PVarData(vd)^.VAny))
+  else if (vd^.VarType = DocVariantVType) and
+          (vd^.Kind <> dvUndefined) then
+    // nested object or array
+    if vd^.IsObject then
+      WriteBlockMap(vd^, Indent)
     else
-      WriteBlockSeq(cd^, Indent)
+      WriteBlockSeq(vd^, Indent)
   else
-    WriteScalar(v);
+    // string-like or unknown: coerce to UTF-8 and apply YAML quoting rules
+    WriteYamlVariantAsString(PVariant(vd)^);
 end;
 
 function TVariantToYaml.Run(const Doc: variant): RawUtf8;
