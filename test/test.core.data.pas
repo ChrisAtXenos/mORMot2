@@ -4243,7 +4243,7 @@ const
   ITER = 20;
   ONLYLOG = false;
 var
-  people, sample, notexpanded, j0, j1, j2, j3: RawUtf8;
+  people, sample, notexpanded, j0, j1, j2, j3, y: RawUtf8;
   peoples: string;
   peoplehash: cardinal;
   P: PUtf8Char;
@@ -4372,6 +4372,14 @@ begin
     j0 := JsonReformat(people, jsonMorml);
   NotifyTestSpeed('Reformat morml', 0, len, @timer, ONLYLOG);
   Check(length(j0) < length(people));
+  y := JsonToYaml(people);
+  Check(y <> '', 'json2yaml');
+  timer.Start;
+  for i := 1 to 5 do
+    j1 := YamlToJson(y);
+  NotifyTestSpeed('Yaml to Json', 0, length(y) * 5, @timer, ONLYLOG);
+  Check(length(j1) < length(people));
+  CheckEqual(JsonToYaml(j1), y);
   dv.InitJson(people);
   peoplehash := Hash32(dv.ToJson);
   dv.Clear; // to reuse dv
@@ -9350,9 +9358,9 @@ begin
         Check(AddString(json, Ansi7ToString(Entry[i].intName)) = i);
         if (i and 1) = (m - 1) then
           AddString(deleted, json[i]);
-        Check(SameText(ExtractFileExt(json[i]), '.json'), 'json1');
-        Check(SameText(ExtractExt(json[i]), '.json'), 'json2');
-        Check(SameText(ExtractExt(json[i], true), 'json'), 'json3');
+        Check(SameTextS(ExtractFileExt(json[i]), '.json'), 'json1');
+        Check(SameTextS(ExtractExt(json[i]), '.json'), 'json2');
+        Check(SameTextS(ExtractExt(json[i], true), 'json'), 'json3');
         Check(SameExt(json[i], ['.JSon']) >= 0, 'json4');
         Check(SameExt(json[i], ['JSon'], true) >= 0, 'json5');
         Check(SameExt(json[i], ['.js']) < 0, 'json6');
