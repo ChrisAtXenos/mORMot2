@@ -1877,7 +1877,7 @@ begin
   err := Executable.Command.DetectUnknown;
   if (err <> '') or
      Executable.Command.Option(['?', 'help'], 'display this message') or
-     SameText(redirect, 'help') then
+     SameTextS(redirect, 'help') then
   begin
     ConsoleWrite(err);
     ConsoleWrite(Executable.Command.FullDescription);

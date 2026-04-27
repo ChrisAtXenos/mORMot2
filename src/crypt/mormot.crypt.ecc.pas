@@ -3659,7 +3659,7 @@ function TEccSignatureCertifiedFile.FromFile(const aFileName: TFileName): boolea
 var
   json: RawUtf8;
 begin
-  if SameText(ExtractExt(aFileName), ECCCERTIFICATESIGN_FILEEXT) then
+  if SameTextS(ExtractExt(aFileName), ECCCERTIFICATESIGN_FILEEXT) then
     json := StringFromFile(aFileName)
   else
     json := StringFromFile(aFileName + ECCCERTIFICATESIGN_FILEEXT);

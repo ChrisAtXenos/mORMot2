@@ -5279,24 +5279,24 @@ begin
   Data := @V; // allow to modify a const argument
   case length(Arguments) of
     0:
-      if SameText(Name, 'Clear') then
+      if SameTextS(Name, 'Clear') then
       begin
         Data^.Reset;
         result := true;
       end;
     1:
-      if SameText(Name, 'Add') then
+      if SameTextS(Name, 'Add') then
       begin
         Data^.AddItem(variant(Arguments[0]));
         result := true;
       end
-      else if SameText(Name, 'Delete') then
+      else if SameTextS(Name, 'Delete') then
       begin
         Data^.Delete(Data^.GetValueIndex(ToUtf8(Arguments[0])));
         result := true;
       end;
     2:
-      if SameText(Name, 'Add') then
+      if SameTextS(Name, 'Add') then
       begin
         Data^.AddValue(ToUtf8(Arguments[0]), variant(Arguments[1]));
         result := true;
@@ -5315,12 +5315,12 @@ begin
   Data := @V; // allow to modify a const argument
   case length(Arguments) of
     1:
-      if SameText(Name, 'Exists') then
+      if SameTextS(Name, 'Exists') then
       begin
         variant(Dest) := Data.GetValueIndex(ToUtf8(Arguments[0])) >= 0;
         exit;
       end
-      else if SameText(Name, 'NameIndex') then
+      else if SameTextS(Name, 'NameIndex') then
       begin
         variant(Dest) := Data.GetValueIndex(ToUtf8(Arguments[0]));
         exit;
@@ -5328,12 +5328,12 @@ begin
       else if VariantToInteger(variant(Arguments[0]), ndx) then
       begin
         if (Name = '_') or
-           SameText(Name, 'Value') then
+           SameTextS(Name, 'Value') then
         begin
           Data.RetrieveValueOrRaiseException(ndx, variant(Dest), true);
           exit;
         end
-        else if SameText(Name, 'Name') then
+        else if SameTextS(Name, 'Name') then
         begin
           Data.RetrieveNameOrRaiseException(ndx, temp);
           RawUtf8ToVariant(temp, variant(Dest));
@@ -5341,7 +5341,7 @@ begin
         end;
       end
       else if (Name = '_') or
-              SameText(Name, 'Value') then
+              SameTextS(Name, 'Value') then
       begin
         temp := ToUtf8(Arguments[0]);
         Data.RetrieveValueOrRaiseException(pointer(temp), length(temp),

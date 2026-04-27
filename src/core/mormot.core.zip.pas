@@ -2865,7 +2865,7 @@ begin
     // TZipRead did ensure ZipNamePathDelim was stored in Entry[].zipName
     normalized := NormalizeZipName(aName);
     for result := 0 to Count - 1 do
-      if SameText(Entry[result].zipName, normalized) then
+      if SameTextS(Entry[result].zipName, normalized) then
         exit;
   end;
   result := -1;

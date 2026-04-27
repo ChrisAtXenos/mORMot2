@@ -7900,7 +7900,7 @@ begin
   ext := ExtractExt(FileName, WithoutDot);
   if ext <> '' then
     for result := 0 to high(Exts) do
-      if SameText(ext, Exts[result]) then
+      if CompareText(ext, Exts[result]) = 0 then
         exit;
   result := -1;
 end;

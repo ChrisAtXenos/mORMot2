@@ -2947,7 +2947,7 @@ begin
     exit;
   repeat
     inc(result);
-    if SameText(GetNextItemString(P), ext) then
+    if SameTextS(GetNextItemString(P), ext) then
       exit;
   until P = nil;
   result := -1;
