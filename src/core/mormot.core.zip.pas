@@ -1862,7 +1862,7 @@ begin
   result := false;
   for i := 0 to length(fOnCreateFromFilesIgnore) - 1 do
     // case-insensitive even on POSIX (no AnsiCompareFileName)
-    if CompareText(Entry.zipName, fOnCreateFromFilesIgnore[i]) = 0 then
+    if SameTextS(Entry.zipName, fOnCreateFromFilesIgnore[i]) then
       exit;
   result := true;
 end;
