@@ -1742,6 +1742,12 @@ function StrCompIL(P1, P2: pointer; L: PtrInt; Default: PtrInt = 0): PtrInt;
 function StrIComp(Str1, Str2: pointer): PtrInt;
   {$ifdef HASINLINE}inline;{$endif}
 
+/// faster alternative to StrIComp() = 0
+function StrIEqual(Str1, Str2: pointer): boolean;
+
+/// faster alternative to AnsiICompW() = 0
+function StrIEqualW(Str1, Str2: PWord): boolean;
+
 /// StrIComp-like function with a lookup table and Str1/Str2 expected not nil
 function StrICompNotNil(Str1, Str2: pointer; Up: PNormTableByte): PtrInt;
   {$ifdef HASINLINE}inline;{$endif}
@@ -7041,6 +7047,70 @@ begin
     else
       // Str1=''
       result := -1;
+end;
+
+function StrIEqual(Str1, Str2: pointer): boolean;
+var
+  c1: byte; // integer/PtrInt are actually slower on FPC
+  {$ifdef CPUX86NOTPIC}
+  table: TNormTableByte absolute NormToUpperAnsi7Byte;
+  {$else}
+  table: PByteArray;
+  {$endif CPUX86NOTPIC}
+begin
+  result := false;
+  if Str1 <> Str2 then
+    if Str1 <> nil then
+      if Str2 <> nil then
+      begin
+        {$ifndef CPUX86NOTPIC}
+        table := @NormToUpperAnsi7Byte;
+        {$endif CPUX86NOTPIC}
+        repeat
+          c1 := table[PByte(Str1)^];
+          if c1 <> table[PByte(Str2)^] then
+            exit;
+          if c1 = 0 then
+            break;
+          inc(PByte(Str1));
+          inc(PByte(Str2));
+        until false;
+      end;
+  result := true;
+end;
+
+function StrIEqualW(Str1, Str2: PWord): boolean;
+var
+  c1, c2: PtrUInt;
+  {$ifdef CPUX86NOTPIC}
+  table: TNormTableByte absolute NormToUpperAnsi7Byte;
+  {$else}
+  table: PByteArray;
+  {$endif CPUX86NOTPIC}
+begin
+  result := false;
+  if Str1 <> Str2 then
+    if Str1 <> nil then
+      if Str2 <> nil then
+      begin
+        {$ifndef CPUX86NOTPIC}
+        table := @NormToUpperAnsi7Byte;
+        {$endif CPUX86NOTPIC}
+        repeat
+          c1 := Str1^;
+          c2 := Str2^;
+          if c1 <> c2 then
+            if (c1 > 255) or
+               (c2 > 255) or
+               (table[c1] <> table[c2]) then
+              exit;
+          if c1 = 0 then
+            break;
+          inc(Str1);
+          inc(Str2);
+        until false;
+      end;
+  result := true;
 end;
 
 function StrCompByNumber(Str1, Str2: pointer): PtrInt;

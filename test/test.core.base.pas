@@ -831,9 +831,18 @@ begin
   Check(CompareText('abcd', '') > 0);
   Check(CompareText('', 'abcd') < 0);
   CheckEqual(StrIComp(nil, nil), 0);
+  Check(StrIEqual(nil, nil));
   CheckEqual(StrIComp(PAnsiChar('abcD'), nil), 1);
   CheckEqual(StrIComp(nil, PAnsiChar('ABcd')), -1);
   CheckEqual(StrIComp(PAnsiChar('abcD'), PAnsiChar('ABcd')), 0);
+  Check(StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABcd')));
+  Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABc')));
+  Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABce')));
+  Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABcde')));
+  Check(StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABcd'))));
+  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABc'))));
+  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABce'))));
+  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABcde'))));
   Check(StrIComp(PAnsiChar('abcD'), PAnsiChar('ABcF')) =
     StrComp(PAnsiChar('ABCD'), PAnsiChar('ABCF')));
   CheckEqual(StrComp(PAnsiChar('abcD'), nil), 1, 'abcD');
