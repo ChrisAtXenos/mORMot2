@@ -1389,7 +1389,6 @@ type
   TYamlLine = record
     Indent: PtrInt;   // count of leading space characters
     Content: RawUtf8; // trimmed of leading spaces and trailing \r
-    Raw: RawUtf8;     // original line with trailing \r stripped but indent kept
   end;
   TYamlLines = array of TYamlLine;
   PYamlLine = ^TYamlLine;
@@ -1669,11 +1668,9 @@ type
       LineIdx: integer; var Text: RawUtf8): PUtf8Char;
     procedure EmitFlowScalar(const Frag: RawUtf8; LineIdx: integer);
     procedure EmitScalarFragment(const Frag: RawUtf8; LineIdx: integer);
-    procedure EmitJsonString(const S: RawUtf8);
-      {$ifdef HASINLINE} inline; {$endif}
     procedure EmitKey(const K: RawUtf8);
-    function CollectBlockScalar(MinIndent: integer; Folded: boolean;
-      Chomp: AnsiChar; ExplicitIndent: integer = 0): RawUtf8;
+    procedure EmitCollectBlockScalar(MinIndent, ExplicitIndent: integer;
+      Folded, Chomp: AnsiChar);
     procedure EmitBlockScalar(const rest: RawUtf8; BaseIndent: integer);
   public
     constructor Create;
@@ -1765,21 +1762,16 @@ begin
     Error(LineIdx, 'multi-document streams are not supported');
 end;
 
-procedure TYamlToJson.EmitJsonString(const S: RawUtf8);
-begin
-  fOut.AddJsonString(S);
-end;
-
 procedure TYamlToJson.EmitKey(const K: RawUtf8);
 begin
   if K <> '' then
     case K[1] of
       '"':
-        fOut.AddNoJsonEscape(pointer(K), length(K)); // already JSON-escaped
+        fOut.AddString(K);              // already JSON-escaped
       '''':
-        fOut.AddQuotedStringAsJson(K);               // unquote and JSON-escape
+        fOut.AddQuotedStringAsJson(K);  // unquote and JSON-escape
     else
-      fOut.AddJsonString(K);                         // JSON-escape
+      fOut.AddJsonString(K);            // JSON-escape
     end
   else
     fOut.AddShorter('""');
@@ -1788,12 +1780,13 @@ end;
 procedure TYamlToJson.EmitScalarFragment(const Frag: RawUtf8; LineIdx: integer);
 var
   s: RawUtf8;
-  bval: boolean;
   ival: Int64;
 begin
   s := Frag;
   YamlStripLineComment(s);
-  s := TrimLeft(s);
+  if (s <> '') and
+     (s[1] = ' ') then
+    s := TrimLeft(s);
   if s = '' then
   begin
     fOut.AddNull;
@@ -1807,14 +1800,13 @@ begin
   CheckUnsupportedScalar(LineIdx, pointer(s));
   if IsYamlNull(pointer(s)) then
     fOut.AddNull
-  else if IsBooleanJson(pointer(s), @bval) then // YAML 1.2 is exact true/false
-    fOut.Add(bval)
-  else if TryYamlInt(pointer(s), ival) then     // normalize 0x 0o integers
-    fOut.Add(ival)
-  else if IsNumberJson(pointer(s)) then
-    fOut.AddNoJsonEscape(pointer(s), length(s)) // valid JSON number
+  else if TryYamlInt(pointer(s), ival) then
+    fOut.Add(ival)                          // normalized 0x 0o integers
+  else if IsBooleanJson(pointer(s)) or
+          IsNumberJson(pointer(s)) then
+    fOut.AddString(s)                       // valid JSON number or boolean
   else
-    EmitJsonString(s);
+    fOut.AddJsonString(s);                  // as JSON "string"
 end;
 
 procedure TYamlToJson.EmitFlowScalar(const Frag: RawUtf8; LineIdx: integer);
@@ -1829,21 +1821,18 @@ begin
   EmitScalarFragment(s, LineIdx);
 end;
 
-function TYamlToJson.CollectBlockScalar(MinIndent: integer; Folded: boolean;
-  Chomp: AnsiChar; ExplicitIndent: integer): RawUtf8;
+procedure TYamlToJson.EmitCollectBlockScalar(MinIndent, ExplicitIndent: integer;
+  Folded, Chomp: AnsiChar);
 var
   tmp: TTextWriter;
-  i, n, blockIndent, startIdx, blankRun: integer;
+  blockIndent, blankRun: integer;
   len: PtrInt;
   c: PYamlLine;
   prevWasContent: boolean;
+  text: RawUtf8;
   buf: TTextWriterStackBuffer;
 begin
-  result := '';
-  startIdx := fIdx;
-  i := startIdx;
-  n := fCount;
-  c := @fLines[startIdx];
+  c := @fLines[fIdx];
   if ExplicitIndent > 0 then
   begin
     // YAML 1.2 §8.1.1.1 explicit indent indicator: the content indent is
@@ -1853,17 +1842,13 @@ begin
     // skip leading blank lines; stop at the first non-blank line. If that
     // line is shallower than blockIndent, the block is empty (blockIndent
     // reset to -1 so the existing "empty block" path below takes over).
-    while i < n do
+    while (fIdx < fCount) and
+          (c^.Content = '') do
     begin
-      if c^.Content = '' then
-      begin
-        inc(i);
-        inc(c);
-        continue;
-      end;
-      break;
+      inc(fIdx);
+      inc(c);
     end;
-    if (i >= n) or
+    if (fIdx >= fCount) or
        (c^.Indent < blockIndent) then
       blockIndent := -1;
   end
@@ -1871,11 +1856,11 @@ begin
   begin
     // detect block indent from the first non-blank line whose indent >= MinIndent
     blockIndent := -1;
-    while i < n do
+    while fIdx < fCount do
     begin
       if c^.Content = '' then
       begin
-        inc(i);
+        inc(fIdx);
         inc(c);
         continue;
       end;
@@ -1886,21 +1871,18 @@ begin
     end;
   end;
   if blockIndent < 0 then
-  begin
     // empty block no chomping needed
-    fIdx := i;
     exit;
-  end;
   tmp := TTextWriter.CreateOwnedStream(buf);
   try
     blankRun := 0;
     prevWasContent := false;
-    while i < n do
+    while fIdx < fCount do
     begin
       if c^.Content = '' then
       begin
         inc(blankRun);
-        inc(i);
+        inc(fIdx);
         inc(c);
         continue;
       end;
@@ -1909,79 +1891,68 @@ begin
       // block content line: strip blockIndent prefix
       if prevWasContent then
         if blankRun = 0 then
-          if Folded then
-            tmp.Add(' ')
-          else
-            tmp.Add(#10)
+          tmp.AddDirect(folded)
         else
           // preserve blank-line runs literally as \n * blankRun
-          while blankRun > 0 do
-          begin
-            tmp.Add(#10);
-            dec(blankRun);
-          end
-      else
+          tmp.AddChars(#10, blankRun)
+      else if blankRun <> 0 then
         // leading blanks before first content: keep them
-        while blankRun > 0 do
-        begin
-          tmp.Add(#10);
-          dec(blankRun);
-        end;
-      tmp.AddStringCopy(c^.Raw, blockIndent + 1, MaxInt);
+        tmp.AddChars(#10, blankRun);
+      tmp.AddChars(' ', c^.Indent - blockIndent);
+      tmp.AddString(c^.Content);
       prevWasContent := true;
       blankRun := 0;
-      inc(i);
+      inc(fIdx);
       inc(c);
     end;
-    tmp.SetText(result);
+    tmp.SetText(text);
   finally
     tmp.Free;
   end;
-  fIdx := i;
-  len := length(result);
+  len := length(text);
   // apply chomping to the trailing content
   case Chomp of
     '-':
       begin
         // strip all trailing newlines
         while (len > 0) and
-              (result[len] in [#13, #10]) do
+              (text[len] in [#13, #10]) do
           dec(len);
-        if len <> length(result) then
-          SetLength(result, len); // seldom called
+        if len <> length(text) then
+          SetLength(text, len); // seldom called
       end;
     '+':
       // keep trailing newlines exactly; ensure at least one
       if (len = 0) or
-         not (result[len] in [#13, #10]) then
-        Append(result, #10);
+         not (text[len] in [#13, #10]) then
+        Append(text, #10);
     else
       // clip: collapse trailing newlines to a single one
       while (len >= 2) and
-            (result[len] = #10) and
-            (result[len - 1] = #10) do
+            (text[len] = #10) and
+            (text[len - 1] = #10) do
         dec(len);
-      if len <> length(result) then
-        SetLength(result, len);
+      if len <> length(text) then
+        SetLength(text, len);
       if (len = 0) or
-         (result[len] <> #10) then
-        Append(result, #10);
+         (text[len] <> #10) then
+        Append(text, #10);
   end;
+  fOut.AddJsonString(text);
 end;
 
 procedure TYamlToJson.EmitBlockScalar(const rest: RawUtf8; BaseIndent: integer);
 var
-  indicator: AnsiChar;
-  folded: boolean;
-  chomp: AnsiChar;
+  folded, chomp: AnsiChar;
   explicitIndent: integer;
-  content: RawUtf8;
   i: PtrInt;
 begin
   // rest starts with '|' or '>' optionally followed by chomp ('-' or '+')
   // and/or an explicit indent indicator (single digit 1..9, YAML 1.2 §8.1.1.1)
-  indicator := rest[1];
-  folded := indicator = '>';
+  if rest[1] = '>' then
+    folded := ' '
+  else
+    folded := #10;
   chomp := ' '; // 'clip' default (no chomp indicator)
   explicitIndent := 0;
   for i := 2 to length(rest) do
@@ -2002,8 +1973,7 @@ begin
       break; // #32 #9 '#' or unexpected
     end;
   inc(fIdx); // advance past the key-line marker
-  content := CollectBlockScalar(BaseIndent + 1, folded, chomp, explicitIndent);
-  EmitJsonString(content);
+  EmitCollectBlockScalar(BaseIndent + 1, explicitIndent, folded, chomp);
 end;
 
 procedure TYamlToJson.MergeMultilineQuoted(var rest: RawUtf8;
@@ -2096,7 +2066,7 @@ begin
         // last line closes the scalar; include everything up to and past the
         // closing quote (any trailing content is ignored - quoted scalars end
         // at the closing quote)
-        tmp.AddNoJsonEscape(pointer(cur), length(cur));
+        tmp.AddString(cur);
         // leave fIdx pointing at this closing line; callers advance it
         break;
       end;
@@ -2671,8 +2641,6 @@ begin
     end
     else
       inc(c);
-    // stored raw line content
-    FastSetString(c^.Raw, lineStart, len);
     // compute indentation count
     while lineStart[c^.Indent] = ' ' do
       inc(c^.Indent);
@@ -2689,10 +2657,7 @@ begin
       else if len = 3 then
         if YamlMultiDocument(lineStart) then
            if fCount = 0 then
-           begin
-             FastAssignNew(c^.Raw);
              len := 0 // tolerate a single leading "---" marker
-           end
            else
              Error(fCount, 'multi-document streams are not supported');
     // store trimmed content
@@ -2874,7 +2839,7 @@ begin
     fOut.AddJsonString(S)
   else
      // we can directly output this string
-    fOut.AddNoJsonEscape(pointer(S), length(S))
+    fOut.AddString(S);
 end;
 
 procedure TVariantToYaml.WriteYamlKey(const K: RawUtf8);
