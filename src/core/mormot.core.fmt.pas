@@ -1532,8 +1532,8 @@ begin
 end;
 
 function YamlLineKeyEnd(const S: RawUtf8): PtrInt;
-// returns the 0-based index of the ':' that ends the key (followed by space or EOL),
-// or -1 if not a mapping line; the key itself may be quoted.
+// returns the 0-based index of the ':' that ends the key (followed by space or
+// EOL), or -1 if not a mapping line; the key itself may be quoted
 var
   p: PUtf8Char;
 begin
@@ -1744,11 +1744,11 @@ begin
     exit;
   // per YAML 1.2 §5.3, anchor/alias/tag indicators are only meaningful
   // at the start of a NODE fragment (which is what CheckUnsupportedScalar
-  // is called with - a key's rest or a dash item's afterDash). Mid-
-  // fragment occurrences are literal text in plain scalars. This avoids
+  // is called with - a key's rest or a dash item's afterDash).
+  // Mid-fragment occurrences are literal text in plain scalars. This avoids
   // firing on real-world OpenAPI descriptions: URL query "?a=1&b=2"
   // (27 hits in GitHub REST), markdown "**bold**" (182 hits) and
-  // markdown inline images "![img](url)" (215 hits).
+  // markdown inline images "![img](url)" (215 hits)
   case p^ of
     '&':
       Error(LineIdx, 'YAML anchors (&name) are not supported');
@@ -1832,22 +1832,17 @@ var
   text: RawUtf8;
   buf: TTextWriterStackBuffer;
 begin
-  c := @fLines[fIdx];
+  // skip leading blank lines; stop at the first non-blank line.
+  c := SkipBlankLines;
   if ExplicitIndent > 0 then
   begin
     // YAML 1.2 §8.1.1.1 explicit indent indicator: the content indent is
     // fixed at parent_indent + ExplicitIndent, NOT auto-detected. MinIndent
-    // equals parent_indent + 1 at this point, so parent_indent = MinIndent-1.
+    // equals parent_indent + 1 at this point, so parent_indent = MinIndent-1
     blockIndent := MinIndent - 1 + ExplicitIndent;
-    // skip leading blank lines; stop at the first non-blank line. If that
-    // line is shallower than blockIndent, the block is empty (blockIndent
-    // reset to -1 so the existing "empty block" path below takes over).
-    while (fIdx < fCount) and
-          (c^.Content = '') do
-    begin
-      inc(fIdx);
-      inc(c);
-    end;
+    // if the first non-blank line is shallower than blockIndent, the block is
+    // empty (blockIndent reset to -1 so the existing "empty block" path below
+    // takes over)
     if (fIdx >= fCount) or
        (c^.Indent < blockIndent) then
       blockIndent := -1;
@@ -1856,19 +1851,8 @@ begin
   begin
     // detect block indent from the first non-blank line whose indent >= MinIndent
     blockIndent := -1;
-    while fIdx < fCount do
-    begin
-      if c^.Content = '' then
-      begin
-        inc(fIdx);
-        inc(c);
-        continue;
-      end;
-      if c^.Indent < MinIndent then
-        break;
+    if c^.Indent >= MinIndent then
       blockIndent := c^.Indent;
-      break;
-    end;
   end;
   if blockIndent < 0 then
     // empty block no chomping needed
@@ -1987,7 +1971,7 @@ procedure TYamlToJson.MergeMultilineQuoted(var rest: RawUtf8;
 // (still wrapped in quotes, ready for EmitKey), and fIdx has been
 // advanced past any consumed continuation lines. The first (key) line is NOT
 // consumed here - callers are responsible for their own fIdx advance on the
-// first line, just as before the merge was introduced.
+// first line, just as before the merge was introduced
 var
   quote: AnsiChar;
   trailingEscape: boolean;
@@ -2084,7 +2068,7 @@ procedure TYamlToJson.FoldPlainScalar(var rest: RawUtf8; MapIndent: integer);
 // at the first potential continuation line (the caller consumed the key
 // line). Advances fIdx past each folded line. A line break is NOT consumed
 // when the next line opens a nested structure (dash, flow, block-scalar
-// indicator, quoted scalar, or another "key: value" entry).
+// indicator, quoted scalar, or another "key: value" entry)
 var
   c: PYamlLine;
 begin
@@ -2105,7 +2089,7 @@ begin
     // once we are continuing a plain scalar, indicator chars at line start
     // (", ', {, [, |, >) are just literal text - the GitHub REST spec embeds
     // markdown ("[List selected ...](https://...)") and quoted phrases (e.g.
-    // «"My TEam Näme") mid-description
+    // "My TEam Name") mid-description
     Append(rest, ' ', c^.Content);
     inc(fIdx);
     inc(c);
@@ -2115,9 +2099,9 @@ end;
 procedure TYamlToJson.ParseBlockMap(Indent: integer);
 var
   first: boolean;
+  lineIdx: integer;
   keyEnd: PtrInt;
   keyText, rest: RawUtf8;
-  lineIdx: integer;
   c: PYamlLine;
 begin
   fOut.Add('{');
@@ -2170,7 +2154,7 @@ begin
         // inline flow collection as the value - rewrite Content so ParseValue
         // sees the flow fragment alone, not the full "key: {..}"/"key: [..]"
         // line (otherwise ParseValue would dispatch back to ParseBlockMap).
-        // Mirrors the same pattern in ParseImplicitMapFromDash.
+        // Mirrors the same pattern in ParseImplicitMapFromDash
         c^.Content := rest;
         ParseValue(Indent);
       end
@@ -2226,7 +2210,7 @@ begin
     begin
       // YAML 1.2 compact nested block-seq: "- - X" on one physical line.
       // The inner "- X" starts a nested seq at (outer Indent + 2); rewrite
-      // the current line to look like it starts at that indent and recurse.
+      // the current line to look like it starts at that indent and recurse
       c^.Content := afterDash;
       c^.Indent := implicitIndent;
       ParseBlockSeq(implicitIndent);
@@ -2296,8 +2280,8 @@ begin
       fOut.AddNull;
   end
   else if rest[1] in ['|', '>'] then
-    // block-scalar min-indent must exceed the parent-key indent (MapIndent),
-    // so the EmitBlockScalar base = MapIndent matches ParseBlockMap/continuation
+    // block-scalar min-indent must exceed the parent-key indent (MapIndent), so
+    // the EmitBlockScalar base = MapIndent matches ParseBlockMap/continuation
     EmitBlockScalar(rest, MapIndent)
   else
   begin
@@ -2838,7 +2822,7 @@ begin
     // since the JSON escape set is a subset of YAML's flow-scalar escapes
     fOut.AddJsonString(S)
   else
-     // we can directly output this string
+    // we can directly output this text without quotes
     fOut.AddString(S);
 end;
 
