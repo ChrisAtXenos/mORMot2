@@ -826,6 +826,11 @@ procedure TTestCoreBase.FastStringCompare;
     Check(HasAnyChar(text, any) = expected);
   end;
 
+  function _StrIEqualW(p1, p2: PWideChar): boolean; // for Delphi 7-2027
+  begin
+    result := StrIEqualW(pointer(p1), pointer(p2));
+  end;
+
 begin
   CheckEqual(CompareText('', ''), 0);
   Check(CompareText('abcd', '') > 0);
@@ -839,10 +844,10 @@ begin
   Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABc')));
   Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABce')));
   Check(not StrIEqual(PAnsiChar('abcD'), PAnsiChar('ABcde')));
-  Check(StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABcd'))));
-  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABc'))));
-  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABce'))));
-  Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABcde'))));
+  Check(_StrIEqualW('abcD', 'ABcd'));
+  Check(not _StrIEqualW('abcD', 'ABc'));
+  Check(not _StrIEqualW('abcD', 'ABce'));
+  Check(not _StrIEqualW('abcD', 'ABcde'));
   Check(SameTextS('', ''));
   Check(SameTextS('a', 'a'));
   Check(SameTextS('a', 'A'));
