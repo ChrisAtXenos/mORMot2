@@ -1936,7 +1936,10 @@ var
   // comparison functions
   SortDynArrayAnsiStringByCase: array[{CaseInsensitive=}boolean] of TDynArraySortCompare;
 
-/// SameText() overloaded function with proper UTF-8 decoding
+/// fastest SameText() overloaded function for string/TFileName
+function SameTextS(const S1, S2: string): boolean;
+
+/// SameText() overloaded function for RawUtf8 with proper UTF-8 decoding
 // - fast version using NormToUpper[] array for all WinAnsi characters
 // - this version will decode each UTF-8 glyph before using NormToUpper[],
 // so will remove WinAnsi (Code Page 1252) accents during its comparison
@@ -7718,6 +7721,12 @@ function SameTextU(const S1, S2: RawUtf8): boolean;
 // checking UTF-8 lengths is not accurate: surrogates may be confusing
 begin
   result := Utf8IComp(pointer(S1), pointer(S2)) = 0;
+end;
+
+function SameTextS(const S1, S2: string): boolean;
+begin
+  result := (length(S1) = length(S2)) and
+    {$ifdef UNICODE}StrIEqualW{$else}StrIEqual{$endif}(pointer(S1), pointer(S2));
 end;
 
 function FindAnsi(A, UpperValue: PAnsiChar): boolean;

@@ -843,6 +843,14 @@ begin
   Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABc'))));
   Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABce'))));
   Check(not StrIEqualW(pointer(PWideChar('abcD')), pointer(PWideChar('ABcde'))));
+  Check(SameTextS('', ''));
+  Check(SameTextS('a', 'a'));
+  Check(SameTextS('a', 'A'));
+  Check(SameTextS('ab', 'Ab'));
+  Check(SameTextS('aBC', 'AbC'));
+  Check(not SameTextS('aBC', 'Ab'));
+  Check(not SameTextS('aBC', 'Abd'));
+  Check(not SameTextS('aBC', 'Abcd'));
   Check(StrIComp(PAnsiChar('abcD'), PAnsiChar('ABcF')) =
     StrComp(PAnsiChar('ABCD'), PAnsiChar('ABCF')));
   CheckEqual(StrComp(PAnsiChar('abcD'), nil), 1, 'abcD');
