@@ -1389,14 +1389,14 @@ type
   TYamlLine = record
     Indent: PtrInt;   // count of leading space characters
     Content: RawUtf8; // trimmed of leading spaces and trailing \r
-    Raw: RawUtf8;     // original line with trailing \r stripped
+    Raw: RawUtf8;     // original line with trailing \r stripped but indent kept
   end;
   TYamlLines = array of TYamlLine;
   PYamlLine = ^TYamlLine;
 
 // strip an unquoted trailing "# ..." comment from a scalar fragment
 // - accounts for single/double quoted spans where # is literal
-procedure StripLineComment(var S: RawUtf8);
+procedure YamlStripLineComment(var S: RawUtf8);
 var
   p: PUtf8Char;
   inSingle, inDouble: boolean;
@@ -1531,7 +1531,7 @@ begin
   result := true;
 end;
 
-function LineKeyEnd(const S: RawUtf8): PtrInt;
+function YamlLineKeyEnd(const S: RawUtf8): PtrInt;
 // returns the 0-based index of the ':' that ends the key (followed by space or EOL),
 // or -1 if not a mapping line; the key itself may be quoted.
 var
@@ -1573,7 +1573,7 @@ begin
   until false;
 end;
 
-function LineIsDashItem(const S: RawUtf8; out afterDash: RawUtf8): boolean;
+function YamlLineIsDashItem(const S: RawUtf8; out afterDash: RawUtf8): boolean;
 var
   i: PtrInt;
 begin
@@ -1594,7 +1594,7 @@ begin
   result := true;
 end;
 
-function IsDashLine(p: PUtf8Char): boolean;
+function YamlDashLine(p: PUtf8Char): boolean;
   {$ifdef HASINLINE} inline; {$endif}
 begin // fast check, no afterDash extraction
   result := (p <> nil) and
@@ -1624,6 +1624,17 @@ begin
   until false;
   result := false;
 end;
+
+function YamlMultiDocument(p: PUtf8Char): boolean;
+  {$ifdef HASINLINE} inline; {$endif}
+var
+  c: cardinal;
+begin // caller should have ensured length=3
+  c := PCardinal(p)^ and $ffffff;
+  result := (c = ord('-') + ord('-') shl 8 + ord('-') shl 16) or
+            (c = ord('.') + ord('.') shl 8 + ord('.') shl 16);
+end;
+
 
 
 { ----- YAML -> JSON converter --------------------------------------------- }
@@ -1708,14 +1719,14 @@ function TYamlToJson.SkipBlankLines: PYamlLine;
 begin
   result := @fLines[fIdx];
   while fIdx < fCount do
-  begin
     if (result^.Content = '') or
        (result^.Content[1] = '#') then
-      inc(fIdx)
+    begin
+      inc(fIdx);
+      inc(result);
+    end
     else
       break;
-    inc(result);
-  end;
 end;
 
 procedure TYamlToJson.CheckUnsupportedScalar(LineIdx: integer; const S: RawUtf8);
@@ -1723,12 +1734,12 @@ var
   p: PUtf8Char;
   inSingle, inDouble: boolean;
 begin
-  if S = '' then
-    exit;
-  if (S = '---') or
-     (S = '...') then
-    Error(LineIdx, 'multi-document streams are not supported');
   p := pointer(S);
+  if p = nil then
+    exit;
+  if (PStrLen(p - _STRLEN)^ = 3) and
+     YamlMultiDocument(p) then
+    Error(LineIdx, 'multi-document streams are not supported');
   inSingle := false;
   inDouble := false;
   repeat
@@ -1794,7 +1805,7 @@ var
   ival: Int64;
 begin
   s := Frag;
-  StripLineComment(s);
+  YamlStripLineComment(s);
   s := TrimLeft(s);
   if s = '' then
   begin
@@ -2086,7 +2097,7 @@ begin
         // folded line break -> single space (per YAML 1.2 §7.5)
         tmp.AddDirect(' ');
       inc(fIdx);
-      if fIdx >= fCount then
+      if AtEnd then
         Error(firstLineIdx, 'unterminated multi-line quoted scalar');
       // Content is already left-trimmed by SplitYamlLines via Indent metadata,
       // which is exactly the §7.5 requirement that leading ws is ignored
@@ -2130,11 +2141,11 @@ begin
     if c^.Indent <= MapIndent then
       exit;
     // a real "- " dash item at the continuation indent starts a new seq entry
-    if IsDashLine(pointer(c^.Content)) then
+    if YamlDashLine(pointer(c^.Content)) then
       exit;
     // a new "key:" line (quoted or plain) is a nested map, not continuation;
     // LineKeyEnd handles both "foo:" and '"foo":' forms
-    if LineKeyEnd(c^.Content) >= 0 then
+    if YamlLineKeyEnd(c^.Content) >= 0 then
       exit;
     // otherwise it's plain-scalar text; fold with a single space per §6.5.
     // once we are continuing a plain scalar, indicator chars at line start
@@ -2163,7 +2174,7 @@ begin
       break;
     if c^.Indent <> Indent then
       break;
-    keyEnd := LineKeyEnd(c^.Content);
+    keyEnd := YamlLineKeyEnd(c^.Content);
     if keyEnd < 0 then
       break;
     TrimRightCopy(c^.Content, 1, keyEnd, keyText);
@@ -2185,7 +2196,7 @@ begin
         ParseValue(c^.Indent)
       else if (not AtEnd) and
               (c^.Indent = Indent) and
-              IsDashLine(pointer(c^.Content)) then
+              YamlDashLine(pointer(c^.Content)) then
         // YAML 1.2 compact block seq: "key:" followed by "- item" at the
         // same indent as the key (common in real-world OpenAPI specs)
         ParseBlockSeq(c^.Indent)
@@ -2238,7 +2249,7 @@ begin
       break;
     if c^.Indent <> Indent then
       break;
-    if not LineIsDashItem(c^.Content, afterDash) then
+    if not YamlLineIsDashItem(c^.Content, afterDash) then
       break;
     lineIdx := fIdx;
     if not first then
@@ -2257,7 +2268,7 @@ begin
     end
     else if afterDash[1] in ['|', '>'] then
       EmitBlockScalar(afterDash, Indent)
-    else if IsDashLine(pointer(afterDash)) then
+    else if YamlDashLine(pointer(afterDash)) then
     begin
       // YAML 1.2 compact nested block-seq: "- - X" on one physical line.
       // The inner "- X" starts a nested seq at (outer Indent + 2); rewrite
@@ -2279,11 +2290,9 @@ begin
       c^.Indent := implicitIndent;
       ParseValue(implicitIndent);
     end
-    else if LineKeyEnd(afterDash) >= 0 then
-    begin
+    else if YamlLineKeyEnd(afterDash) >= 0 then
       // implicit mapping item: "- key: value" [, "   key2: v2"]
-      ParseImplicitMapFromDash(implicitIndent, afterDash, lineIdx);
-    end
+      ParseImplicitMapFromDash(implicitIndent, afterDash, lineIdx)
     else
     begin
       if afterDash[1] in ['"', ''''] then
@@ -2308,16 +2317,17 @@ var
 begin
   fOut.Add('{');
   // emit the first entry from afterDash
-  keyEnd := LineKeyEnd(firstEntry);
+  keyEnd := YamlLineKeyEnd(firstEntry);
   if keyEnd < 0 then
-    Error(firstLineIdx, 'expected mapping entry after "- "');
+    Error(firstLineIdx, 'missing mapping entry after "- "');
   TrimRightCopy(firstEntry, 1, keyEnd, keyText);
   rest := '';
   if keyEnd + 1 < length(firstEntry) then
     TrimLeftCopy(firstEntry, keyEnd + 2, MaxInt, rest);
   EmitKey(keyText);
   fOut.AddDirect(':');
-  if (rest = '') or (rest[1] = '#') then
+  if (rest = '') or
+     (rest[1] = '#') then
   begin
     inc(fIdx);
     c := SkipBlankLines;
@@ -2326,7 +2336,7 @@ begin
       ParseValue(c^.Indent)
     else if (not AtEnd) and
             (c^.Indent = MapIndent) and
-            IsDashLine(pointer(c^.Content)) then
+            YamlDashLine(pointer(c^.Content)) then
       ParseBlockSeq(c^.Indent)
     else
       fOut.AddNull;
@@ -2358,12 +2368,11 @@ begin
   // continuation: subsequent lines at MapIndent with key-colon
   repeat
     c := SkipBlankLines;
-    if AtEnd then
-      break;
-    if c^.Indent <> MapIndent then
+    if AtEnd or
+       (c^.Indent <> MapIndent) then
       break;
     lineContent := c^.Content;
-    keyEnd := LineKeyEnd(lineContent);
+    keyEnd := YamlLineKeyEnd(lineContent);
     if keyEnd < 0 then
       break;
     TrimRightCopy(lineContent, 1, keyEnd, keyText);
@@ -2384,7 +2393,7 @@ begin
         ParseValue(c^.Indent)
       else if (not AtEnd) and
               (c^.Indent = MapIndent) and
-              IsDashLine(pointer(c^.Content)) then
+              YamlDashLine(pointer(c^.Content)) then
         ParseBlockSeq(c^.Indent)
       else
         fOut.AddNull;
@@ -2708,12 +2717,12 @@ begin
       inc(fIdx);
       exit;
     end;
-    if LineIsDashItem(c^.Content, afterDash) then
+    if YamlLineIsDashItem(c^.Content, afterDash) then
     begin
       ParseBlockSeq(c^.Indent);
       exit;
     end;
-    if LineKeyEnd(c^.Content) >= 0 then
+    if YamlLineKeyEnd(c^.Content) >= 0 then
     begin
       ParseBlockMap(c^.Indent);
       exit;
@@ -2742,66 +2751,65 @@ end;
 // - accepts both LF and CRLF terminators; trailing \r is stripped
 procedure TYamlToJson.SplitLines(const Yaml: RawUtf8);
 var
-  p, lineStart: PUtf8Char;
+  lineStart, lineEnd, lineNext: PUtf8Char;
   len: PtrInt;
   c: PYamlLine;
 begin
   fCount := 0;
   fLines := nil;
-  p := pointer(Yaml);
-  if p = nil then
+  lineStart := pointer(Yaml);
+  if lineStart = nil then
     exit;
-  lineStart := p;
+  lineEnd := lineStart + length(Yaml);
   repeat
-    if p^ in [#0, #10] then
+    // detect line ending (using SSE2 asm if available)
+    len := BufferLineLength(lineStart, lineEnd); // both CRLF or LF
+    lineNext := lineStart + len;
+    // append a new entry to fLines[]
+    if fCount >= length(fLines) then
     begin
-      // append a new entry to fLines[]
-      if fCount >= length(fLines) then
-        SetLength(fLines, NextGrow(fCount));
+      SetLength(fLines, NextGrow(fCount));
       c := @fLines[fCount];
-      // stored raw line content
-      len := p - lineStart;
-      if (len > 0) and
-         (p[-1] = #13) then
-        dec(len); // ignore trailing \r if present
-      FastSetString(c^.Raw, lineStart, len);
-      // compute indentation count
-      while lineStart[c^.Indent] = ' ' do
-        inc(c^.Indent);
-      inc(lineStart, c^.Indent); // trim left
-      dec(len, c^.Indent);
-      // upfront scan: reject multi-doc separators and YAML directives
-      if lineStart^ = #9 then
-        Error(fCount, 'tab characters are not allowed for indentation')
-      else if c^.Indent = 0 then
-        // per YAML 1.2 spec, --- and ... markers are only structural when at
-        // col 0; inside indented content (block scalars, etc.) they're literal
-        if lineStart^ = '%' then
-          Error(fCount, 'YAML directives (%YAML / %TAG ...) are not supported')
-        else if len = 3 then
-          case PCardinal(lineStart)^ and $ffffff of
-            ord('-') + ord('-') shl 8 + ord('-') shl 16,
-            ord('.') + ord('.') shl 8 + ord('.') shl 16:
-             if fCount = 0 then
-             begin
-               FastAssignNew(c^.Raw);
-               len := 0 // tolerate a single leading "---" marker
-             end
-             else
-               Error(fCount, 'multi-document streams are not supported');
-          end;
-      // store trimmed content
-      while (len > 0) and
-            (lineStart[len - 1] = ' ') do
-        dec(len); // trim right
-      FastSetString(c^.Content, lineStart, len);
-      inc(fCount);
-      if p^ = #0 then
-        break;
-      lineStart := p + 1;
-    end;
-    inc(p);
-  until false;
+    end
+    else
+      inc(c);
+    // stored raw line content
+    FastSetString(c^.Raw, lineStart, len);
+    // compute indentation count
+    while lineStart[c^.Indent] = ' ' do
+      inc(c^.Indent);
+    inc(lineStart, c^.Indent); // trim left
+    dec(len, c^.Indent);
+    // upfront scan: reject multi-doc separators and YAML directives
+    if lineStart^ = #9 then
+      Error(fCount, 'tab characters are not allowed for indentation')
+    else if c^.Indent = 0 then
+      // per YAML 1.2 spec, --- and ... markers are only structural when at
+      // col 0; inside indented content (block scalars, etc.) they're literal
+      if lineStart^ = '%' then
+        Error(fCount, 'YAML directives (%YAML / %TAG ...) are not supported')
+      else if len = 3 then
+        if YamlMultiDocument(lineStart) then
+           if fCount = 0 then
+           begin
+             FastAssignNew(c^.Raw);
+             len := 0 // tolerate a single leading "---" marker
+           end
+           else
+             Error(fCount, 'multi-document streams are not supported');
+    // store trimmed content
+    while (len > 0) and
+          (lineStart[len - 1] = ' ') do
+      dec(len); // trim right
+    FastSetString(c^.Content, lineStart, len);
+    inc(fCount);
+    // ignore a single CRLF/LF and go to next line
+    lineStart := lineNext;
+    if lineStart^ = #13 then
+      inc(lineStart);
+    if lineStart^ = #10 then
+      inc(lineStart);
+  until lineStart^ = #0;
   if length(fLines) <> fCount then
     DynArrayFakeLength(fLines, fCount);
 end;
@@ -2823,7 +2831,8 @@ begin
   // topIndent that was not consumed indicates an inconsistent-indent error
   SkipBlankLines;
   if not AtEnd then
-    Error(fIdx, 'unexpected line at this indentation');
+    ErrorFmt(fIdx, 'unexpected line at this indentation (idx=% count=%)',
+      [fIdx, fCount]);
   fOut.SetText(result);
 end;
 
