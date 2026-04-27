@@ -1093,7 +1093,7 @@ type
   /// used by TSynBackgroundTimer internal registration list
   TSynBackgroundTimerTask = record
     Msg: TRawUtf8DynArray;
-    MsgCount, MilliSecs: integer;
+    MsgCount, MilliSecs: integer; // not PtrInt
     OnProcess: TOnSynBackgroundTimerProcess;
     NextTix: Int64;
   end;
@@ -1112,9 +1112,9 @@ type
   // use its own separated thread
   TSynBackgroundTimer = class(TSynBackgroundThreadProcess)
   protected
-    fSafe: TLightLock; // seems enough - TOSLightLock is more than twice slower
+    fSafe: TLightLock;  // seems enough - TOSLightLock is more than twice slower
     fTask: TSynBackgroundTimerTasks;
-    fTaskCount: integer;
+    fTaskCount: integer; // not PtrInt
     fTasks: TDynArray;
     fTodo: TSynBackgroundTimerTasks; // local storage for EverySecond()
     procedure EverySecond(Sender: TSynBackgroundThreadProcess);
@@ -3517,7 +3517,8 @@ var
 begin
   // caller should have made fTasks.Safe.*Lock
   n := fTaskCount;
-  if n > 0 then
+  if (n > 0) and
+     Assigned(aProcess.Code) then
   begin
     result := pointer(fTask);
     repeat
@@ -3613,15 +3614,14 @@ var
 begin
   result := false;
   if (self = nil) or
-     Terminated or
-     (not Assigned(aOnProcess)) then
+     Terminated then
     exit;
   fSafe.Lock;
   try
     t := Find(TMethod(aOnProcess));
     if t = nil then
       exit;
-    if pointer(aMsg) <> pointer(NO_MSG) then
+    if pointer(aMsg) <> pointer(NO_MSG) then // ExecuteNow() expects no Msg
       AddRawUtf8(t^.Msg, t^.MsgCount, aMsg);
     if aExecuteNow then
       t^.NextTix := 0;
@@ -3641,8 +3641,7 @@ var
 begin
   result := false;
   if (self = nil) or
-     Terminated or
-     (not Assigned(aOnProcess)) then
+     Terminated then
     exit;
   fSafe.Lock;
   try
@@ -3663,8 +3662,7 @@ var
 begin
   result := false;
   if (self = nil) or
-     Terminated or
-     (not Assigned(aOnProcess)) then
+     Terminated then
     exit;
   fSafe.Lock;
   try
