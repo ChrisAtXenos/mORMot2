@@ -10452,7 +10452,7 @@ begin
     for result := 0 to ValuesCount do
       if (PtrUInt(Values^) <> 0) and // StrIComp() won't change length
          ({%H-}PStrLen(PtrUInt(Values^) - _STRLEN)^ = len) and
-         (StrIComp(pointer(Values^), pointer(Value)) = 0) then
+         StrIEqual(pointer(Values^), pointer(Value)) then
         exit
       else
         inc(Values);

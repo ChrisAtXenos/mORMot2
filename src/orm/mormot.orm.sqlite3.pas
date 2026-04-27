@@ -544,7 +544,7 @@ begin
     modname := module.ModuleName;
   if (module = nil) or
      (module.DB.DB <> DB) or
-     (StrIComp(pointer(modname), argv[0]) <> 0) then
+     not StrIEqual(pointer(modname), argv[0]) then
   begin
     Notify('vt_Create(%<>%)', [argv[0], modname]);
     result := SQLITE_ERROR;
