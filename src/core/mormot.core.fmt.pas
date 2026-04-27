@@ -579,7 +579,7 @@ type
   // - fsoWriteIni/fsoWriteHjson will force SaveIfNeeded to use INI/HJson format
   // - fsoWriteYaml will force SaveIfNeeded to use YAML encoding; there is no
   // fsoReadYaml since our YAML parser raise exceptions so explicit LoadFromYaml
-  // method call is cleaner for this new feature
+  // LoadFromFile methods are cleaner for this new feature
   // - fsoNoEnumsComment will customize SaveIfNeeded output
   TSynJsonFileSettingsOption = (
     fsoDisableSaveIfNeeded,
@@ -1399,34 +1399,35 @@ type
 procedure YamlStripLineComment(var S: RawUtf8);
 var
   p: PUtf8Char;
-  inSingle, inDouble: boolean;
   cut: PtrInt;
 begin
   if S = '' then
     exit;
   p := pointer(S);
-  inSingle := false;
-  inDouble := false;
   cut := -1;
   repeat
     case p^ of
       #0:
         break;
       '''':
-        if not inDouble then
-          inSingle := not inSingle;
+        begin
+          p := GotoEndOfQuotedString(p);
+          if p^ <> '''' then
+            exit;
+        end;
       '"':
-        if not inSingle then
-          inDouble := not inDouble;
+        begin
+          p := GotoEndOfJsonString(p);
+          if p^ <> '"' then
+            exit;
+        end;
       '#':
-        if not inSingle and
-           not inDouble then
-          if (p = pointer(S)) or
-             ((p - 1)^ in [' ', #9]) then
-          begin
-            cut := p - PUtf8Char(pointer(S));
-            break;
-          end;
+        if (p = pointer(S)) or
+           ((p - 1)^ in [' ', #9]) then
+        begin
+          cut := p - PUtf8Char(pointer(S));
+          break;
+        end;
     end;
     inc(p);
   until false;
@@ -1536,41 +1537,39 @@ function YamlLineKeyEnd(const S: RawUtf8): PtrInt;
 // or -1 if not a mapping line; the key itself may be quoted.
 var
   p: PUtf8Char;
-  inSingle, inDouble: boolean;
 begin
-  result := -1;
   p := pointer(S);
-  if p = nil then
-    exit;
-  inSingle := false;
-  inDouble := false;
-  repeat
-    case p^ of
-      #0:
-        exit;
-      '''':
-        if not inDouble then
-          inSingle := not inSingle;
-      '"':
-        if not inSingle then
-          inDouble := not inDouble;
-      ':':
-        if not inSingle and
-           not inDouble then
+  if p <> nil then
+    repeat
+      case p^ of
+        #0:
+          break;
+        '''':
+          begin
+            p := GotoEndOfQuotedString(p);
+            if p^ = #0 then
+              break;
+          end;
+        '"':
+          begin
+            p := GotoEndOfJsonString(p);
+            if p^ = #0 then
+              break;
+          end;
+        '#':
+          if (p = pointer(S)) or
+             ((p - 1)^ in [' ', #9]) then
+            break; // comment - no colon before it
+        ':':
           if p[1] in [#0, #9, ' '] then
           begin
             result := p - PUtf8Char(pointer(S));
             exit;
           end;
-      '#':
-        if not inSingle and
-           not inDouble then
-          if (p = pointer(S)) or
-             ((p - 1)^ in [' ', #9]) then
-            exit; // comment - no colon before it
-    end;
-    inc(p);
-  until false;
+      end;
+      inc(p);
+    until false;
+  result := -1;
 end;
 
 function YamlLineIsDashItem(const S: RawUtf8; out afterDash: RawUtf8): boolean;
@@ -1645,17 +1644,17 @@ type
     fLines: TYamlLines;
     fCount: integer;
     fIdx: integer;
-    fDepth: integer;
-    fMaxDepth: integer;
+    fDepth, fMaxDepth: integer;
     fOut: TJsonWriter;
     procedure Error(LineIdx: integer; const Msg: ShortString);
     procedure ErrorFmt(LineIdx: integer; const Fmt: RawUtf8;
       const Args: array of const);
-    procedure SplitLines(const Yaml: RawUtf8);
+    procedure FillLines(const Yaml: RawUtf8);
     function SkipBlankLines: PYamlLine;
+    function SkipQuoted(LineIdx: integer; p: PUtf8Char): PUtf8Char;
     function AtEnd: boolean;
       {$ifdef HASINLINE} inline; {$endif}
-    procedure CheckUnsupportedScalar(LineIdx: integer; const S: RawUtf8);
+    procedure CheckUnsupportedScalar(LineIdx: integer; p: PUtf8Char);
     procedure MergeMultilineQuoted(var rest: RawUtf8; firstLineIdx: integer);
     procedure FoldPlainScalar(var rest: RawUtf8; MapIndent: integer);
     procedure ParseValue(MinIndent: integer);
@@ -1666,6 +1665,8 @@ type
     procedure ParseFlow(var p: PUtf8Char; LineIdx: integer);
     procedure ParseFlowMap(var p: PUtf8Char; LineIdx: integer);
     procedure ParseFlowSeq(var p: PUtf8Char; LineIdx: integer);
+    function ParseFlowExtract(p: PUtf8Char; EndChar: AnsiChar;
+      LineIdx: integer; var Text: RawUtf8): PUtf8Char;
     procedure EmitFlowScalar(const Frag: RawUtf8; LineIdx: integer);
     procedure EmitScalarFragment(const Frag: RawUtf8; LineIdx: integer);
     procedure EmitJsonString(const S: RawUtf8);
@@ -1729,53 +1730,39 @@ begin
       break;
 end;
 
-procedure TYamlToJson.CheckUnsupportedScalar(LineIdx: integer; const S: RawUtf8);
-var
-  p: PUtf8Char;
-  inSingle, inDouble: boolean;
+function TYamlToJson.SkipQuoted(LineIdx: integer; p: PUtf8Char): PUtf8Char;
 begin
-  p := pointer(S);
+  if p^ = '''' then // p^ = " or ' at calling
+    result := GotoEndOfQuotedString(p)  // escaped as ''
+  else
+    result := GotoEndOfJsonString(p);   // escaped as \"
+  if result^ <> p^ then
+    ErrorFmt(LineIdx, 'missing ending % quote', [p^]);
+  inc(result); // return the position after ending quote
+end;
+
+procedure TYamlToJson.CheckUnsupportedScalar(LineIdx: integer; p: PUtf8Char);
+begin
   if p = nil then
     exit;
+  // per YAML 1.2 §5.3, anchor/alias/tag indicators are only meaningful
+  // at the start of a NODE fragment (which is what CheckUnsupportedScalar
+  // is called with - a key's rest or a dash item's afterDash). Mid-
+  // fragment occurrences are literal text in plain scalars. This avoids
+  // firing on real-world OpenAPI descriptions: URL query "?a=1&b=2"
+  // (27 hits in GitHub REST), markdown "**bold**" (182 hits) and
+  // markdown inline images "![img](url)" (215 hits).
+  case p^ of
+    '&':
+      Error(LineIdx, 'YAML anchors (&name) are not supported');
+    '*':
+      Error(LineIdx, 'YAML aliases (*name) are not supported');
+    '!':
+      Error(LineIdx, 'explicit YAML tags (!...) are not supported');
+  end;
   if (PStrLen(p - _STRLEN)^ = 3) and
      YamlMultiDocument(p) then
     Error(LineIdx, 'multi-document streams are not supported');
-  inSingle := false;
-  inDouble := false;
-  repeat
-    case p^ of
-      #0:
-        break;
-      '''':
-        if not inDouble then
-          inSingle := not inSingle;
-      '"':
-        if not inSingle then
-          inDouble := not inDouble;
-      '&',
-      '*',
-      '!':
-        // per YAML 1.2 §5.3, anchor/alias/tag indicators are only meaningful
-        // at the start of a NODE fragment (which is what CheckUnsupportedScalar
-        // is called with - a key's rest or a dash item's afterDash). Mid-
-        // fragment occurrences are literal text in plain scalars. This avoids
-        // firing on real-world OpenAPI descriptions: URL query "?a=1&b=2"
-        // (27 hits in GitHub REST), markdown "**bold**" (182 hits) and
-        // markdown inline images "![img](url)" (215 hits).
-        if not inSingle and
-           not inDouble then
-          if p = pointer(S) then
-            case p^ of
-              '&':
-                Error(LineIdx, 'YAML anchors (&name) are not supported');
-              '*':
-                Error(LineIdx, 'YAML aliases (*name) are not supported');
-              '!':
-                Error(LineIdx, 'explicit YAML tags (!...) are not supported');
-            end;
-    end;
-    inc(p);
-  until false;
 end;
 
 procedure TYamlToJson.EmitJsonString(const S: RawUtf8);
@@ -1817,7 +1804,7 @@ begin
     EmitKey(s);
     exit;
   end;
-  CheckUnsupportedScalar(LineIdx, s);
+  CheckUnsupportedScalar(LineIdx, pointer(s));
   if IsYamlNull(pointer(s)) then
     fOut.AddNull
   else if IsBooleanJson(pointer(s), @bval) then // YAML 1.2 is exact true/false
@@ -2135,17 +2122,14 @@ begin
   while fIdx < fCount do
   begin
     // blank line terminates folding (paragraph break in plain scalars)
-    if c^.Content = '' then
-      exit;
+    if (c^.Content = '') or
     // sibling or outer-scope line is not part of the folded scalar
-    if c^.Indent <= MapIndent then
-      exit;
+       (c^.Indent <= MapIndent) or
     // a real "- " dash item at the continuation indent starts a new seq entry
-    if YamlDashLine(pointer(c^.Content)) then
-      exit;
+       YamlDashLine(pointer(c^.Content)) or
     // a new "key:" line (quoted or plain) is a nested map, not continuation;
     // LineKeyEnd handles both "foo:" and '"foo":' forms
-    if YamlLineKeyEnd(c^.Content) >= 0 then
+       (YamlLineKeyEnd(c^.Content) >= 0) then
       exit;
     // otherwise it's plain-scalar text; fold with a single space per §6.5.
     // once we are continuing a plain scalar, indicator chars at line start
@@ -2210,7 +2194,7 @@ begin
       // YAML 1.2 §7.5: a quoted scalar may span multiple lines
       if rest[1] in ['"', ''''] then
         MergeMultilineQuoted(rest, lineIdx);
-      CheckUnsupportedScalar(lineIdx, rest);
+      CheckUnsupportedScalar(lineIdx, pointer(rest));
       if rest[1] in ['{', '['] then
       begin
         // inline flow collection as the value - rewrite Content so ParseValue
@@ -2280,7 +2264,7 @@ begin
     else if afterDash[1] in ['{', '['] then
     begin
       // flow collection inline
-      CheckUnsupportedScalar(lineIdx, afterDash);
+      CheckUnsupportedScalar(lineIdx, pointer(afterDash));
       // use flow parser directly on afterDash content
       // simplest: treat the rest of the line as a flow value
       // ParseValue at current indent will see the `- ` already consumed;
@@ -2297,7 +2281,7 @@ begin
     begin
       if afterDash[1] in ['"', ''''] then
         MergeMultilineQuoted(afterDash, lineIdx);
-      CheckUnsupportedScalar(lineIdx, afterDash);
+      CheckUnsupportedScalar(lineIdx, pointer(afterDash));
       inc(fIdx);
       if not (afterDash[1] in ['"', '''']) then
         FoldPlainScalar(afterDash, Indent);
@@ -2349,7 +2333,7 @@ begin
   begin
     if rest[1] in ['"', ''''] then
       MergeMultilineQuoted(rest, firstLineIdx);
-    CheckUnsupportedScalar(firstLineIdx, rest);
+    CheckUnsupportedScalar(firstLineIdx, pointer(rest));
     if rest[1] in ['{', '['] then
     begin
       c := @fLines[fIdx];
@@ -2404,7 +2388,7 @@ begin
     begin
       if rest[1] in ['"', ''''] then
         MergeMultilineQuoted(rest, curIdx);
-      CheckUnsupportedScalar(curIdx, rest);
+      CheckUnsupportedScalar(curIdx, pointer(rest));
       if rest[1] in ['{', '['] then
       begin
         fLines[fIdx].Content := rest;
@@ -2441,13 +2425,53 @@ begin
   end;
 end;
 
+function TYamlToJson.ParseFlowExtract(p: PUtf8Char; EndChar: AnsiChar;
+  LineIdx: integer; var Text: RawUtf8): PUtf8Char;
+var
+  depth: integer;
+begin
+  result := p;
+  depth := 0;
+  repeat
+    case result^ of
+      #0:
+        break;
+      '''',
+      '"':
+        result := SkipQuoted(LineIdx, result);
+      '{',
+      '[':
+        inc(depth);
+      '}':
+        if depth = 0 then
+          if EndChar = '}' then
+            Error(LineIdx, 'unbalanced "}" in flow-seq value')
+          else
+            break
+        else
+          dec(depth);
+      ']':
+        if depth = 0 then
+          if EndChar = ']' then
+            Error(LineIdx, 'unbalanced "]" in flow-seq value')
+          else
+            break
+        else
+          dec(depth);
+      ',':
+        if depth = 0 then
+          break;
+    end;
+    inc(result);
+  until false;
+  FastSetString(Text, p, result - p);
+end;
+
 procedure TYamlToJson.ParseFlowMap(var p: PUtf8Char; LineIdx: integer);
 var
   first: boolean;
-  keyStart, keyEnd, valStart, valEnd: PUtf8Char;
+  keyStart, keyEnd: PUtf8Char;
   keyText, valText: RawUtf8;
-  inSingle, inDouble: boolean;
-  depth: integer;
 begin
   if p^ <> '{' then
     Error(LineIdx, 'expected "{"');
@@ -2477,40 +2501,7 @@ begin
     keyStart := p;
     if p^ in ['"', ''''] then
     begin
-      // skip quoted
-      inSingle := p^ = '''';
-      inDouble := p^ = '"';
-      inc(p);
-      while p^ <> #0 do
-      begin
-        if inSingle then
-          if p^ = '''' then
-            if p[1] = '''' then
-              inc(p, 2)
-            else
-            begin
-              inc(p);
-              break;
-            end
-          else
-            inc(p)
-        else if inDouble then
-        begin
-          if p^ = '\' then
-          begin
-            inc(p);
-            if p^ <> #0 then
-              inc(p); // skip the escaped char (guarded against buffer end)
-          end
-          else if p^ = '"' then
-          begin
-            inc(p);
-            break;
-          end
-          else
-            inc(p);
-        end;
-      end;
+      p := SkipQuoted(LineIdx, p);
       keyEnd := p;
       while p^ in [' ', #9] do
         inc(p);
@@ -2529,7 +2520,7 @@ begin
     end;
     FastSetString(keyText, keyStart, keyEnd - keyStart);
     TrimSelf(keyText);
-    CheckUnsupportedScalar(LineIdx, keyText);
+    CheckUnsupportedScalar(LineIdx, pointer(keyText));
     if not first then
       fOut.Add(',');
     EmitKey(keyText);
@@ -2544,50 +2535,7 @@ begin
       ParseFlow(p, LineIdx)
     else
     begin
-      valStart := p;
-      depth := 0;
-      inSingle := false;
-      inDouble := false;
-      repeat
-        case p^ of
-          #0:
-            break;
-          '''':
-            if not inDouble then
-              inSingle := not inSingle;
-          '"':
-            if not inSingle then
-              inDouble := not inDouble;
-          '{', '[':
-            if not inSingle and
-               not inDouble then
-              inc(depth);
-          '}':
-            begin
-              if not inSingle and
-                 not inDouble then
-                if depth = 0 then
-                  break
-                else
-                  dec(depth);
-            end;
-          ']':
-            if not inSingle and
-               not inDouble then
-              if depth = 0 then
-                Error(LineIdx, 'unbalanced "]" in flow-map value')
-              else
-                dec(depth);
-          ',':
-            if not inSingle and
-               not inDouble and
-               (depth = 0) then
-              break;
-        end;
-        inc(p);
-      until false;
-      valEnd := p;
-      FastSetString(valText, valStart, valEnd - valStart);
+      p := ParseFlowExtract(p, ']', LineIdx, valText);
       EmitFlowScalar(valText, LineIdx);
     end;
   end;
@@ -2596,9 +2544,7 @@ end;
 
 procedure TYamlToJson.ParseFlowSeq(var p: PUtf8Char; LineIdx: integer);
 var
-  first, inSingle, inDouble: boolean;
-  depth: integer;
-  valStart, valEnd: PUtf8Char;
+  first: boolean;
   valText: RawUtf8;
 begin
   if p^ <> '[' then
@@ -2632,50 +2578,7 @@ begin
       first := false;
       continue;
     end;
-    valStart := p;
-    depth := 0;
-    inSingle := false;
-    inDouble := false;
-    repeat
-      case p^ of
-        #0:
-          break;
-        '''':
-          if not inDouble then
-            inSingle := not inSingle;
-        '"':
-          if not inSingle then
-            inDouble := not inDouble;
-        '{', '[':
-          if not inSingle and
-             not inDouble then
-            inc(depth);
-        '}':
-          if not inSingle and
-             not inDouble then
-            if depth = 0 then
-              Error(LineIdx, 'unbalanced "}" in flow-seq value')
-            else
-              dec(depth);
-        ']':
-          begin
-            if not inSingle and
-               not inDouble then
-              if depth = 0 then
-                break
-              else
-                dec(depth);
-          end;
-        ',':
-          if not inSingle and
-             not inDouble and
-             (depth = 0) then
-            break;
-      end;
-      inc(p);
-    until false;
-    valEnd := p;
-    FastSetString(valText, valStart, valEnd - valStart);
+    p := ParseFlowExtract(p, '}', LineIdx, valText);
     if not first then
       fOut.AddDirect(',');
     EmitFlowScalar(valText, LineIdx);
@@ -2686,7 +2589,6 @@ end;
 
 procedure TYamlToJson.ParseValue(MinIndent: integer);
 var
-  content, afterDash: RawUtf8;
   p: PUtf8Char;
   lineIdx: integer;
   c: PYamlLine;
@@ -2708,39 +2610,34 @@ begin
       exit;
     end;
     lineIdx := fIdx;
-    CheckUnsupportedScalar(lineIdx, c^.Content);
+    CheckUnsupportedScalar(lineIdx, pointer(c^.Content));
     if c^.Content[1] in ['{', '['] then
     begin
       // single-line flow at this indent
       p := pointer(c^.Content);
       ParseFlow(p, lineIdx);
       inc(fIdx);
-      exit;
-    end;
-    if YamlLineIsDashItem(c^.Content, afterDash) then
-    begin
-      ParseBlockSeq(c^.Indent);
-      exit;
-    end;
-    if YamlLineKeyEnd(c^.Content) >= 0 then
-    begin
-      ParseBlockMap(c^.Indent);
-      exit;
-    end;
-    // plain top-level scalar line
-    if c^.Content[1] in ['|', '>'] then
-      EmitBlockScalar(c^.Content, fLines[fIdx].Indent)
-    else if c^.Content[1] in ['"', ''''] then
-    begin
-      content := c^.Content;
-      inc(fIdx);
-      MergeMultilineQuoted(content, lineIdx);
-      EmitScalarFragment(content, lineIdx);
     end
+    else if YamlDashLine(pointer(c^.Content)) then
+      ParseBlockSeq(c^.Indent)
+    else if YamlLineKeyEnd(c^.Content) >= 0 then
+      ParseBlockMap(c^.Indent)
     else
     begin
-      EmitScalarFragment(c^.Content, lineIdx);
-      inc(fIdx);
+      // plain top-level scalar line
+      if c^.Content[1] in ['|', '>'] then
+        EmitBlockScalar(c^.Content, fLines[fIdx].Indent)
+      else if c^.Content[1] in ['"', ''''] then
+      begin
+        inc(fIdx);
+        MergeMultilineQuoted(c^.Content, lineIdx); // merge in-place
+        EmitScalarFragment(c^.Content, lineIdx);
+      end
+      else
+      begin
+        EmitScalarFragment(c^.Content, lineIdx);
+        inc(fIdx);
+      end;
     end;
   finally
     dec(fDepth);
@@ -2749,7 +2646,7 @@ end;
 
 // split Yaml into fLines[] with indent metadata
 // - accepts both LF and CRLF terminators; trailing \r is stripped
-procedure TYamlToJson.SplitLines(const Yaml: RawUtf8);
+procedure TYamlToJson.FillLines(const Yaml: RawUtf8);
 var
   lineStart, lineEnd, lineNext: PUtf8Char;
   len: PtrInt;
@@ -2757,6 +2654,7 @@ var
 begin
   fCount := 0;
   fLines := nil;
+  c := nil; // for Delphi compiler
   lineStart := pointer(Yaml);
   if lineStart = nil then
     exit;
@@ -2765,7 +2663,7 @@ begin
     // detect line ending (using SSE2 asm if available)
     len := BufferLineLength(lineStart, lineEnd); // both CRLF or LF
     lineNext := lineStart + len;
-    // append a new entry to fLines[]
+    // prepare a new entry in fLines[]
     if fCount >= length(fLines) then
     begin
       SetLength(fLines, NextGrow(fCount));
@@ -2818,7 +2716,7 @@ function TYamlToJson.Run(const Yaml: RawUtf8): RawUtf8;
 var
   c: PYamlLine;
 begin
-  SplitLines(Yaml);
+  FillLines(Yaml);
   fIdx := 0;
   c := SkipBlankLines;
   if AtEnd then
@@ -2836,19 +2734,48 @@ begin
   fOut.SetText(result);
 end;
 
-procedure YamlToVariant(const Yaml: RawUtf8; out Doc: TDocVariantData;
-  Options: TDocVariantOptions);
+function IsYamlFileName(const FileName: TFileName): boolean;
+begin
+  result := SameExt(FileName, ['yaml', 'yml'], {withoutdot=}true) >= 0;
+end;
+
+function YamlToJson(const Yaml: RawUtf8): RawUtf8;
 var
   conv: TYamlToJson;
-  json: RawUtf8;
 begin
   conv := TYamlToJson.Create;
   try
-    json := conv.Run(Yaml);
+    result := conv.Run(Yaml);
   finally
     conv.Free;
   end;
-  if Doc.InitJsonInPlace(pointer(json), Options) = nil then
+end;
+
+function TryYamlToJson(const Yaml: RawUtf8; out Json: RawUtf8): boolean;
+begin
+  try
+    Json := YamlToJson(Yaml); // may raise EYamlException
+    result := true;
+  except
+    result := false;
+  end;
+end;
+
+function JsonToYaml(const Json: RawUtf8; Options: TYamlWriterOptions;
+  DocOptions: TDocVariantOptions): RawUtf8;
+var
+  doc: TDocVariantData;
+begin
+  if doc.InitJson(Json, DocOptions) then
+    result := VariantToYaml(variant(doc), Options)
+  else
+    result := '';
+end;
+
+procedure YamlToVariant(const Yaml: RawUtf8; out Doc: TDocVariantData;
+  Options: TDocVariantOptions);
+begin
+  if Doc.InitJsonInPlace(pointer(YamlToJson(Yaml)), Options) = nil then
     EYamlException.RaiseU('YamlToVariant: JSON output error');
 end;
 
@@ -3095,43 +3022,6 @@ begin
   FileFromString(VariantToYaml(Doc, Options), FileName);
 end;
 
-function IsYamlFileName(const FileName: TFileName): boolean;
-begin
-  result := SameExt(FileName, ['yaml', 'yml'], {withoutdot=}true) >= 0;
-end;
-
-function YamlToJson(const Yaml: RawUtf8): RawUtf8;
-var
-  conv: TYamlToJson;
-begin
-  conv := TYamlToJson.Create;
-  try
-    result := conv.Run(Yaml);
-  finally
-    conv.Free;
-  end;
-end;
-
-function TryYamlToJson(const Yaml: RawUtf8; out Json: RawUtf8): boolean;
-begin
-  try
-    Json := YamlToJson(Yaml); // may raise EYamlException
-    result := true;
-  except
-    result := false;
-  end;
-end;
-
-function JsonToYaml(const Json: RawUtf8; Options: TYamlWriterOptions;
-  DocOptions: TDocVariantOptions): RawUtf8;
-var
-  doc: TDocVariantData;
-begin
-  if doc.InitJson(Json, DocOptions) then
-    result := VariantToYaml(variant(doc), Options)
-  else
-    result := '';
-end;
 
 
 { ************* Markup (e.g. Markdown or Emoji) process }
@@ -4667,7 +4557,7 @@ begin
       2:
         result := LoadFromIniText(text, aSectionName);
       3 .. 6:
-        result := LoadFromJsonText(text);
+        result := LoadFromJsonText(text); // JsonSettingsToObject supports those
     else
       result := LoadFromText(text, aSectionName); // detect JSON or INI
     end;
