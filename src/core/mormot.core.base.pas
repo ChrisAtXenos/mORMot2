@@ -502,6 +502,7 @@ type
   TByteToWideChar = array[byte] of WideChar;
   /// type of mormot.core.unicode TNormTable lookup table
   TAnsiCharToAnsiChar = array[AnsiChar] of AnsiChar;
+  PAnsiCharToAnsiChar = ^TAnsiCharToAnsiChar;
   /// type of a lookup table used for fast two-digit chars conversion
   TAnsiCharToWord = array[AnsiChar] of word;
   PAnsiCharToWord = ^TAnsiCharToWord;
@@ -748,6 +749,13 @@ type
   PStrRec = ^TStrRec;
   PDynArrayRec = ^TDynArrayRec;
 
+  /// store a fake RawUtf8 constant string with up to 7 chars
+  TStrRecConst = record
+    Header: TStrRec;
+    Text: array[0 .. 7] of AnsiChar;
+  end;
+  PStrRecConst = ^TStrRecConst;
+
 const
   /// codePage offset = string header size
   // - used to calc the beginning of memory allocation of a string
@@ -941,6 +949,12 @@ procedure FastAssignNewNotVoid(var d; s: pointer = nil); overload;
 // - caller should fill the pointer result, and eventually call FastAssignNew()
 function FastNewString(len: PtrInt; codepage: PtrInt = CP_RAWBYTESTRING): pointer;
   {$ifdef HASSAFEFPCINLINE}inline;{$endif}
+
+procedure FastSetStrRec(var Rec: TStrRec; Len: TStrLen);
+  {$ifdef HASINLINE}inline;{$endif}
+
+/// fill a RawUtf8 constant with up to 7 chars of UTF-8 content
+function FastSetConst(var S; var Rec: TStrRecConst; P: pointer; Len: TStrLen): PUtf8Char;
 
 /// ensure the supplied variable will have a CP_UTF8 code page
 // - making it unique if needed
@@ -5298,6 +5312,29 @@ begin
     FastAssignNewNotVoid(s, result);
 end;
 
+procedure FastSetStrRec(var Rec: TStrRec; Len: TStrLen);
+begin
+  {$ifdef HASCODEPAGE}
+  {$ifdef FPC}
+  Rec.codePageElemSize := CP_UTF8 + (1 shl 16);
+  {$else}
+  PCardinal(@Rec.codePage)^ := cardinal(CP_UTF8) + (1 shl 16);
+  {$endif FPC}
+  {$endif HASCODEPAGE}
+  Rec.refCnt := -1; // make it constant, out of the MM allocation space
+  Rec.length := Len;
+end;
+
+function FastSetConst(var S; var Rec: TStrRecConst; P: pointer; Len: TStrLen): PUtf8Char;
+begin
+  FastSetStrRec(Rec.Header, Len);
+  result := @Rec.Text;
+  if P <> nil then
+    PInt64(result)^ := PInt64(P)^; // up to 7 chars
+  result[Len] := #0;
+  pointer(S) := result;
+end;
+
 {$ifdef HASVARUSTRING}
 procedure FastSynUnicode(var s: SynUnicode; p: pointer; len: PtrInt);
 var
@@ -5313,7 +5350,7 @@ begin
   {$ifdef FPC}
   rec^.codePageElemSize := CP_UTF16 + (SizeOf(WideChar) shl 16);
   {$else}
-  PCardinal(@rec^.codePage)^ := CP_UTF16 + (SizeOf(WideChar) shl 16);
+  PCardinal(@rec^.codePage)^ := cardinal(CP_UTF16) + (SizeOf(WideChar) shl 16);
   {$endif FPC}
   rec^.refCnt := 1;
   rec^.length := len shr 1; // length as WideChar count
