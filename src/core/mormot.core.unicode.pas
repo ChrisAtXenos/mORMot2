@@ -11295,12 +11295,71 @@ type
   PUnicodeUpperTable = ^TUnicodeUpperTable;
   {$endif CPUX86NOTPIC}
 
+/// this is the main Unicode 10.0 case folding lookup table
+// - undecompressed from 1KB constant at unit initialization
+{$ifdef UU_COMPRESSED}
 var
-  /// this is the main Unicode 10.0 case folding lookup table
-  // - undecompressed from 1KB constant at unit initialization
-  {$ifdef UU_COMPRESSED}
   UU: TUnicodeUpperTable;
-  {$else}
+  _UUInit: boolean;
+
+const
+  // 1KB compressed buffer which renders into our 20,016 bytes UU[] array
+  UU_: array[byte] of cardinal = (
+    $040019fd, $ff5a6024, $00855a00, $ffffffe0, $5a5201f0, $02e700e8, $ffe0aa5a,
+    $e0045a4b, $5a790bff, $045a0007, $a045a1ff, $db1878ba, $01a82b01, $0145a000,
+    $1da45008, $041e5a80, $401da450, $5a8f185a, $fffffed4, $590b5ac3, $0c5a84a4,
+    $5314a453, $610008a4, $a4520f5a, $82f5a1a3, $f1ebb5ab, $5a44ddf7, $52105a84,
+    $5a845aa4, $5a4a5ac4, $5a385ac6, $11a45217, $10aba500, $45a00200, $4f5a4401,
+    $0000b15a, $a05a4f04, $5a830145, $c65a0018, $5ebaa05a, $20245ac0, $85a1a452,
+    $5bb55700, $00002a3f, $065a2a3f, $5b04a453, $1f055a40, $a11c02a1, $02a11e02,
+    $3200012e, $45a10001, $c2000133, $3645a10c, $45a10001, $4f000135, $00550690,
+    $000e5aa5, $a54b0cc2, $013165a1, $2845a100, $440000a5, $012fac02, $00012d00,
+    $f70a5144, $41000029, $000a5aa5, $2ac4a16b, $45a10d22, $2b0291fd, $85a10001,
+    $1c00022a, $a129e700, $000226a5, $0d930008, $512a000c, $bb0d920a, $05270001,
+    $0001b900, $0644145a, $25000107, $00280002, $120a5115, $f1f552a5, $54009c55,
+    $a453af5a, $5ac45a44, $0082000c, $5a208400, $ffda00bb, $ad6effff, $09db15d5,
+    $f045a100, $01e13201, $1201f000, $c10001c0, $45a10005, $c70001c2, $c5a10001,
+    $ca0001d1, $01f80001, $a045a100, $01aa33ba, $0001b000, $d0000007, $001efbfb,
+    $a2ffff8c, $0002a0ab, $85a15a83, $e0d0baa2, $01f00bff, $2e01f012, $04f004f2,
+    $3645a02a, $240d45a0, $5a44a459, $847e5a40, $115a405a, $400002f1, $45a0115a,
+    $cc5a400d, $1fd000c4, $01255507, $8202f000, $55f1f555, $00c955f4, $700001f8,
+    $85a10200, $ffffe792, $9c018193, $859e0181, $01819d01, $db0181a4, $89c20181,
+    $00c5f558, $3c90f1e4, $e5a18a04, $e5a10ee6, $5a40baa2, $cc5a40cc, $01c50014,
+    $a045b100, $45aaffba, $00000008, $5a070080, $04800023, $80002b5a, $80000604,
+    $00000635, $bc2f5a0e, $00f75b6d, $d875a108, $050a30a7, $014a0009, $5604a200,
+    $056a0001, $42000164, $00018006, $01700802, $7e070200, $a17e0001, $070080b5,
+    $80080001, $00022635, $35860002, $c4304825, $810975a1, $01e3dbb5, $090010a5,
+    $8004335a, $80053b5a, $5a07000f, $f1ca0137, $e4006c55, $84a501ff, $0001f000,
+    $8e2a00f0, $5aedc05b, $55f15b04, $002f55f4, $900001e6, $f5525201, $87ffd019,
+    $5a1202f0, $000c5a84, $ffffd5d5, $aa02a1d8, $1845a545, $5a84a453, $40a45328,
+    $5a40cc5a, $fb5fc736, $445804bf, $305b045a, $01c1a000, $a182c5e0, $b1c5e245,
+    $f4c5e345, $a4504e55, $a4504c77, $1e55f441, $c417a450, $405a445a, $588a9c5a,
+    $5a405a84, $045b0406, $c05a445b, $592c2a5a, $c6f021a4, $6e55f49b, $01fc6000,
+    $300070a5, $60ffff68, $0970ff7c, $f1f55219, $ffe00655, $35f55257, $0001d800,
+    $528a0270, $2255f1f5, $527f7fd0, $f20011f5, $00063b03, $b603f000, $e035f552,
+    $01f057ff, $09f55206, $0001de00, $5a720210, $020100f1, $0403075a, $0503045a,
+    $0c5a0706, $f15a0803, $00000012, $03120103, $08675104, $5a0b0a09, $5a0d0c1b,
+    $0f0e0c11, $1211100c, $140c0c13, $0c055a15, $00005a16, $0c0e0000, $5a191817,
+    $1b1a0c31, $065a1d1c, $5a1f1e0c, $5a200c26, $22210c09, $230c0f5a, $0000175a,
+    $240c0000, $250c205a, $000c0d5a, $00000000);
+
+procedure InitializeUU;
+var
+  tmp: array[0..7000] of byte; // need only 6653 bytes
+begin
+  GlobalLock;
+  if not _UUInit then
+    // Uppercase Unicode table RLE + SynLZ decompression from 1KB to 20KB :)
+    _UUInit := (RleUnCompress(@tmp, @UU,
+                   SynLZdecompress1(@UU_, 1019, @tmp)) = SizeOf(UU)) and
+               (crc32c(0, @UU, SizeOf(UU)) = $7343D053);
+  GlobalUnLock;
+  if not _UUInit then
+    raise ESynUnicode.Create('UU Table Decompression Failed') // paranoid
+end;
+
+{$else}
+var
   UU: TUnicodeUpperTable = (
     Block: (
      (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -11577,7 +11636,31 @@ var
       12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 37, 12, 12,
       12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12));
   );
-  {$endif UU_COMPRESSED}
+{$endif UU_COMPRESSED}
+
+(*
+procedure doUU;
+var
+  tmp1, tmp2: array[0..5500] of cardinal;
+  rle, lz, i: PtrInt;
+  l: RawUtf8;
+begin
+  rle := RleCompress(@UU, @tmp1, SizeOf(UU), SizeOf(tmp1));
+  lz := SynLZCompress1(@tmp1, rle, @tmp2);
+  writeln(SizeOf(UU)); writeln(rle); writeln(lz);
+  writeln('UU_ = array[byte] of cardinal = ('); l := '  ';
+  for i := 0 to 255 do
+  begin
+    l := l + '$' + HexStr(tmp2[i], 8) + ',';
+    if length(l) > 70 then
+    begin
+      writeln(l);
+      l := '  ';
+    end;
+  end;
+  writeln(l, ');');
+end;
+*)
 
 function TUnicodeUpperTable.UnicodeUpper(c: PtrUInt): PtrUInt;
 var
@@ -11600,6 +11683,10 @@ var
   tab: PUnicodeUpperTable;
   {$endif CPUX86NOTPIC}
 begin
+  {$ifdef UU_COMPRESSED}
+  if not _UUInit then
+    InitializeUU;
+  {$endif UU_COMPRESSED}
   {$ifndef CPUX86NOTPIC}
   tab := @UU;
   {$endif CPUX86NOTPIC}
@@ -11654,6 +11741,10 @@ begin
   if (S <> nil) and
      (D <> nil) then
   begin
+    {$ifdef UU_COMPRESSED}
+    if not _UUInit then
+      InitializeUU;
+    {$endif UU_COMPRESSED}
     {$ifndef CPUX86NOTPIC}
     tab := @UU;
     utf8 := @UTF8_TABLE;
@@ -11823,6 +11914,10 @@ begin
   result := nil;
   if S = '' then
     exit;
+  {$ifdef UU_COMPRESSED}
+  if not _UUInit then
+    InitializeUU;
+  {$endif UU_COMPRESSED}
   SetLength(result, length(S) + 1);
   p := pointer(S);
   n := 0;
@@ -11853,6 +11948,10 @@ var
 label
   c2low;
 begin
+  {$ifdef UU_COMPRESSED}
+  if not _UUInit then
+    InitializeUU;
+  {$endif UU_COMPRESSED}
   {$ifndef CPUX86NOTPIC}
   tab := @UU;
   {$endif CPUX86NOTPIC}
@@ -11934,6 +12033,10 @@ var
 label
   neg, pos;
 begin
+  {$ifdef UU_COMPRESSED}
+  if not _UUInit then
+    InitializeUU;
+  {$endif UU_COMPRESSED}
   {$ifndef CPUX86NOTPIC}
   tab := @UU;
   utf8 := @UTF8_TABLE;
@@ -12056,6 +12159,10 @@ begin
   if (U = nil) or
      (Up = nil) then
     exit;
+  {$ifdef UU_COMPRESSED}
+  if not _UUInit then
+    InitializeUU;
+  {$endif UU_COMPRESSED}
   {$ifndef CPUX86NOTPIC}
   tab := @UU;
   utf8 := @UTF8_TABLE;
@@ -12130,7 +12237,6 @@ nxt:u0 := U;
   until false;
 end;
 
-
 const
   // reference 8-bit upper chars as in WinAnsi/CP1252 for NormToUpper/Lower[]
   // - UU[] would convert accents into upper accents (e acute to E acute): this
@@ -12145,84 +12251,6 @@ const
     65,  65,  198, 67,  69,  69,  69,  69,  73,  73,  73,  73,  68,  78,  79,
     79,  79,  79,  79,  247, 79,  85,  85,  85,  85,  89,  222, 89);
 
-{$ifdef UU_COMPRESSED}
-
-  // 1KB compressed buffer which renders into our 20,016 bytes UU[] array
-  UU_: array[byte] of cardinal = (
-    $040019fd, $ff5a6024, $00855a00, $ffffffe0, $5a5201f0, $02e700e8, $ffe0aa5a,
-    $e0045a4b, $5a790bff, $045a0007, $a045a1ff, $db1878ba, $01a82b01, $0145a000,
-    $1da45008, $041e5a80, $401da450, $5a8f185a, $fffffed4, $590b5ac3, $0c5a84a4,
-    $5314a453, $610008a4, $a4520f5a, $82f5a1a3, $f1ebb5ab, $5a44ddf7, $52105a84,
-    $5a845aa4, $5a4a5ac4, $5a385ac6, $11a45217, $10aba500, $45a00200, $4f5a4401,
-    $0000b15a, $a05a4f04, $5a830145, $c65a0018, $5ebaa05a, $20245ac0, $85a1a452,
-    $5bb55700, $00002a3f, $065a2a3f, $5b04a453, $1f055a40, $a11c02a1, $02a11e02,
-    $3200012e, $45a10001, $c2000133, $3645a10c, $45a10001, $4f000135, $00550690,
-    $000e5aa5, $a54b0cc2, $013165a1, $2845a100, $440000a5, $012fac02, $00012d00,
-    $f70a5144, $41000029, $000a5aa5, $2ac4a16b, $45a10d22, $2b0291fd, $85a10001,
-    $1c00022a, $a129e700, $000226a5, $0d930008, $512a000c, $bb0d920a, $05270001,
-    $0001b900, $0644145a, $25000107, $00280002, $120a5115, $f1f552a5, $54009c55,
-    $a453af5a, $5ac45a44, $0082000c, $5a208400, $ffda00bb, $ad6effff, $09db15d5,
-    $f045a100, $01e13201, $1201f000, $c10001c0, $45a10005, $c70001c2, $c5a10001,
-    $ca0001d1, $01f80001, $a045a100, $01aa33ba, $0001b000, $d0000007, $001efbfb,
-    $a2ffff8c, $0002a0ab, $85a15a83, $e0d0baa2, $01f00bff, $2e01f012, $04f004f2,
-    $3645a02a, $240d45a0, $5a44a459, $847e5a40, $115a405a, $400002f1, $45a0115a,
-    $cc5a400d, $1fd000c4, $01255507, $8202f000, $55f1f555, $00c955f4, $700001f8,
-    $85a10200, $ffffe792, $9c018193, $859e0181, $01819d01, $db0181a4, $89c20181,
-    $00c5f558, $3c90f1e4, $e5a18a04, $e5a10ee6, $5a40baa2, $cc5a40cc, $01c50014,
-    $a045b100, $45aaffba, $00000008, $5a070080, $04800023, $80002b5a, $80000604,
-    $00000635, $bc2f5a0e, $00f75b6d, $d875a108, $050a30a7, $014a0009, $5604a200,
-    $056a0001, $42000164, $00018006, $01700802, $7e070200, $a17e0001, $070080b5,
-    $80080001, $00022635, $35860002, $c4304825, $810975a1, $01e3dbb5, $090010a5,
-    $8004335a, $80053b5a, $5a07000f, $f1ca0137, $e4006c55, $84a501ff, $0001f000,
-    $8e2a00f0, $5aedc05b, $55f15b04, $002f55f4, $900001e6, $f5525201, $87ffd019,
-    $5a1202f0, $000c5a84, $ffffd5d5, $aa02a1d8, $1845a545, $5a84a453, $40a45328,
-    $5a40cc5a, $fb5fc736, $445804bf, $305b045a, $01c1a000, $a182c5e0, $b1c5e245,
-    $f4c5e345, $a4504e55, $a4504c77, $1e55f441, $c417a450, $405a445a, $588a9c5a,
-    $5a405a84, $045b0406, $c05a445b, $592c2a5a, $c6f021a4, $6e55f49b, $01fc6000,
-    $300070a5, $60ffff68, $0970ff7c, $f1f55219, $ffe00655, $35f55257, $0001d800,
-    $528a0270, $2255f1f5, $527f7fd0, $f20011f5, $00063b03, $b603f000, $e035f552,
-    $01f057ff, $09f55206, $0001de00, $5a720210, $020100f1, $0403075a, $0503045a,
-    $0c5a0706, $f15a0803, $00000012, $03120103, $08675104, $5a0b0a09, $5a0d0c1b,
-    $0f0e0c11, $1211100c, $140c0c13, $0c055a15, $00005a16, $0c0e0000, $5a191817,
-    $1b1a0c31, $065a1d1c, $5a1f1e0c, $5a200c26, $22210c09, $230c0f5a, $0000175a,
-    $240c0000, $250c205a, $000c0d5a, $00000000);
-
-procedure InitializeUU;
-var
-  tmp: array[0..7000] of byte; // need only 6653 bytes
-begin
-  // Uppercase Unicode table RLE + SynLZ decompression from 1KB to 20KB :)
-  if (RleUnCompress(@tmp, @UU, SynLZdecompress1(@UU_, 1019, @tmp)) <> SizeOf(UU)) or
-     (crc32c(0, @UU, SizeOf(UU)) <> $7343D053) then
-    raise ESynUnicode.Create('UU Table Decompression Failed'); // paranoid
-end;
-
-{$endif UU_COMPRESSED}
-
-(*
-procedure doUU;
-var
-  tmp1, tmp2: array[0..5500] of cardinal;
-  rle, lz, i: PtrInt;
-  l: RawUtf8;
-begin
-  rle := RleCompress(@UU, @tmp1, SizeOf(UU), SizeOf(tmp1));
-  lz := SynLZCompress1(@tmp1, rle, @tmp2);
-  writeln(SizeOf(UU)); writeln(rle); writeln(lz);
-  writeln('UU_ = array[byte] of cardinal = ('); l := '  ';
-  for i := 0 to 255 do
-  begin
-    l := l + '$' + HexStr(tmp2[i], 8) + ',';
-    if length(l) > 70 then
-    begin
-      writeln(l);
-      l := '  ';
-    end;
-  end;
-  writeln(l, ');');
-end;
-*)
-
 procedure InitializeUnit;
 var
   i: PtrInt;
@@ -12232,10 +12260,6 @@ var
   lng: TLanguage;
   p: PByteArray;
 begin
-  // decompress 1KB static in the exe into 20KB UU[] array for Unicode Uppercase
-  {$ifdef UU_COMPRESSED}
-  InitializeUU;
-  {$endif UU_COMPRESSED}
   // initialize internal lookup tables for various text conversions
   p := @NormToNormByte;
   for i := 0 to 255 do
