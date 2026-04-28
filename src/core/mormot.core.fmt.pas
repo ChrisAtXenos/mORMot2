@@ -594,7 +594,7 @@ type
     fsoNoEnumsComment);
   TSynJsonFileSettingsOptions = set of TSynJsonFileSettingsOption;
 
-  /// abstract parent class able to store settings as JSON file
+  /// abstract parent class able to store settings as JSON / INI / YAML file
   // - supports standard JSON, but also JSON5, JSONC or HJson variations
   // - fallback and try to read as INI or YAML file if no valid JSON is found
   TSynJsonFileSettings = class(TSynAutoCreateFields)
@@ -2769,7 +2769,7 @@ type
   private
     fOut: TJsonWriter;
     fOptions: TYamlWriterOptions;
-    procedure WriteValue(const v: variant; Indent: PtrInt);
+    procedure WriteValue(vd: PDocVariantData; Indent: PtrInt);
     procedure WriteBlockMap(const dv: TDocVariantData; Indent: PtrInt);
     procedure WriteBlockSeq(const dv: TDocVariantData; Indent: PtrInt);
     procedure WriteYamlKey(const K: RawUtf8);
@@ -2863,12 +2863,12 @@ begin
     begin
       fOut.Add(#10);
       WriteIndent(Indent + 2);
-      WriteValue(v^, Indent + 2);
+      WriteValue(cd, Indent + 2);
     end
     else
     begin
       fOut.Add(' ');
-      WriteValue(v^, Indent + 2);
+      WriteValue(pointer(v), Indent + 2);
     end;
     inc(i);
     if i = dv.Count then
@@ -2908,7 +2908,7 @@ begin
       end;
     end
     else
-      WriteValue(v^, Indent + 2);
+      WriteValue(pointer(v), Indent + 2);
     inc(i);
     if i = dv.Count then
       break;
@@ -2918,12 +2918,10 @@ begin
   until false;
 end;
 
-procedure TVariantToYaml.WriteValue(const v: variant; Indent: PtrInt);
+procedure TVariantToYaml.WriteValue(vd: PDocVariantData; Indent: PtrInt);
 var
-  vd: PDocVariantData;
   vt: cardinal;
 begin
-  vd := @v;
   vt := vd^.VarType;
   if vt = varVariantByRef then
   begin
@@ -2952,7 +2950,7 @@ end;
 
 function TVariantToYaml.Run(const Doc: variant): RawUtf8;
 begin
-  WriteValue(Doc, {indent=}0);
+  WriteValue(@Doc, {indent=}0);
   fOut.AddDirect(#10);
   fOut.SetText(result);
 end;
