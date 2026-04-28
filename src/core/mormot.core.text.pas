@@ -1359,9 +1359,7 @@ type
 var
   /// naive but efficient cache to avoid string memory allocation for
   // 0..999 small numbers by Int32ToUtf8/UInt32ToUtf8
-  // - use around 16KB of heap (since each item consumes 16 bytes), but increase
-  // overall performance and reduce memory allocation (and fragmentation),
-  // especially during multi-threaded execution
+  // - filled with statically allocated constant RawUtf8 values at startup
   // - noticeable when RawUtf8 strings are used as array indexes (e.g.
   // in mormot.db.nosql.bson)
   // - less noticeable without any allocation: StrInt32() is faster on a buffer
@@ -11340,6 +11338,9 @@ begin
     end;
 end;
 
+var // pre-allocated SmallUInt32Utf8[] values as constant
+  _SmallUInt32Utf8: array[0..999] of TStrRecConst;
+
 procedure InitializeUnit;
 var
   i: PtrInt;
@@ -11380,7 +11381,7 @@ begin
   for i := 0 to high(SmallUInt32Utf8) do // 0..999 into '0'..'999'
   begin
     P := StrUInt32(@tmp[15], i);
-    FastSetString(SmallUInt32Utf8[i], P, @tmp[15] - P);
+    FastSetConst(SmallUInt32Utf8[i], _SmallUInt32Utf8[i], P, @tmp[15] - P);
   end;
   pc := @METHODNAME32;
   i := length(METHODNAME32);
