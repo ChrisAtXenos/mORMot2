@@ -4261,9 +4261,9 @@ type
   TMultiLightLock = object
   {$endif USERECORDWITHMETHODS}
   private
-    Flags: PtrUInt;      // is also the reentrant > 0 counter
-    ThreadID: TThreadID; // pointer on POSIX, DWord on Windows
-    procedure LockSpin;  // called by the Lock method when inlined
+    Flags: PtrUInt;     // is also the reentrant > 0 counter
+    ThreadID: pointer;  // TThreadID is pointer on POSIX, DWord on Windows
+    procedure LockSpin; // called by the Lock method when inlined
   public
     /// to be called if the instance has not been filled with 0
     // - e.g. not needed if TMultiLightLock is defined as a class field
@@ -10494,13 +10494,13 @@ end;
 procedure TMultiLightLock.Init;
 begin
   Flags := 0;
-  ThreadID := TThreadID(0);
+  ThreadID := nil;
 end;
 
 procedure TMultiLightLock.Done;
 begin
-  Flags := PtrUInt(-1);
-  ThreadID := TThreadID(0); // invalid combination to let TryLock fail
+  Flags := MaxInt;
+  ThreadID := nil; // invalid combination to let TryLock fail
 end;
 
 procedure TMultiLightLock.Lock;
@@ -10512,15 +10512,15 @@ end;
 procedure TMultiLightLock.UnLock;
 begin
   if Flags = 1 then
-    ThreadID := TThreadID(0); // paranoid
+    ThreadID := nil; // paranoid
   LockedDec(Flags, 1);
 end;
 
 function TMultiLightLock.TryLock: boolean;
 var
-  tid: TThreadID;
+  tid: pointer;
 begin
-  tid := GetCurrentThreadId;
+  tid := pointer(GetCurrentThreadId);
   if Flags = 0 then    // is not locked
     if LockedExc(Flags, {to=}1, {from=}0) then // try atomic acquisition
     begin
@@ -10541,7 +10541,7 @@ end;
 procedure TMultiLightLock.ForceLock;
 begin
   Flags := MaxInt; // forced acquisition, whatever the current state is
-  ThreadID := GetCurrentThreadId;
+  ThreadID := pointer(GetCurrentThreadId);
 end;
 
 function TMultiLightLock.IsLocked: boolean;
