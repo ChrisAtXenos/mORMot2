@@ -10338,8 +10338,10 @@ end;
 
 type // SnakeCase() state machine
   TSnakeCase = set of (scDigit, scUp, scLow, sc_, scNext_);
-var
-  SNAKE_CHARS: array[AnsiChar] of TSnakeCase;
+const
+  SNAKE_CHARS: array[TCharKind] of TSnakeCase = (
+    // ckOther, ckLowerAlpha, ckUpperAlpha, ckDigit, ckSign, ckUnderscore, ckPoint
+    [scNext_], [scLow], [scUp], [scDigit], [scNext_], [sc_], [scNext_]);
 
 procedure SnakeCase(P: PAnsiChar; len: PtrInt; var s: RawUtf8; sep: AnsiChar);
 var
@@ -10355,10 +10357,8 @@ begin
   while len <> 0 do
   begin
     last := flags;
-    flags := SNAKE_CHARS[P^];
-    if flags * [scDigit, scUp, scLow, sc_] = [] then
-      include(flags, scNext_)
-    else
+    flags := SNAKE_CHARS[IDENT_CHARS[P^]];
+    if not (scNext_ in flags) then
     begin
       if (d <> @tmp) and
          not (sc_ in last) and
@@ -10382,7 +10382,6 @@ begin
           d^ := NormToLowerAnsi7[c];
         inc(d);
       end;
-      exclude(flags, scNext_);
     end;
     inc(P);
     dec(len);
@@ -12230,7 +12229,6 @@ var
   c: AnsiChar;
   tc: TTextChar;
   ck: TCharKind;
-  sc: TSnakeCase;
   lng: TLanguage;
   p: PByteArray;
 begin
@@ -12298,18 +12296,6 @@ begin
         ck := ckPoint;
     end;
     IDENT_CHARS[c] := ck;
-    sc := [];
-    case c of
-      '0' .. '9':
-        sc := [scDigit];
-      'A' .. 'Z':
-        sc := [scUp];
-      'a' .. 'z':
-        sc := [scLow];
-      '_':
-        sc := [sc_];
-    end;
-    SNAKE_CHARS[c] := sc;
   end;
   for lng := succ(low(lng)) to high(lng) do
   begin
