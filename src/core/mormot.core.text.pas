@@ -6501,7 +6501,7 @@ procedure Curr64ToStr(const Value: Int64; var result: RawUtf8);
 var
   tmp: array[0..31] of AnsiChar;
   P: PAnsiChar;
-  Decim, L: cardinal;
+  decim, L: cardinal;
 begin
   if Value = 0 then
     result := SmallUInt32Utf8[0]
@@ -6511,11 +6511,11 @@ begin
     L := @tmp[31] - P;
     if L > 4 then
     begin
-      Decim := PCardinal(P + L - SizeOf(cardinal))^; // 4 last digits = 4 decimals
-      if Decim = $30303030 then
+      decim := PCardinal(P + L - SizeOf(cardinal))^; // 4 last digits = 4 decimals
+      if decim = $30303030 then
         dec(L, 5)
       else // no decimal
-      if Decim and $ffff0000 = $30300000 then
+      if decim and $ffff0000 = $30300000 then
         dec(L, 2); // 2 decimals
     end;
     FastSetString(result, P, L);
@@ -6536,17 +6536,17 @@ function Curr64ToPChar(const Value: Int64; Dest: PUtf8Char): PtrInt;
 var
   tmp: array[0..31] of AnsiChar;
   P: PAnsiChar;
-  Decim: cardinal;
+  decim: cardinal;
 begin
   P := StrCurr64(@tmp[31], Value);
   result := @tmp[31] - P;
   if result > 4 then
   begin
-    // Decim = 4 last digits = 4 decimals
-    Decim := PCardinal(P + result - SizeOf(cardinal))^;
-    if Decim = $30303030 then // no decimal -> trunc trailing *.0000 chars
+    // decim = 4 last digits = 4 decimals
+    decim := PCardinal(P + result - SizeOf(cardinal))^;
+    if decim = $30303030 then // no decimal -> trunc trailing *.0000 chars
       dec(result, 5)
-    else if Decim and $ffff0000 = $30300000 then // 2 decimals -> trunc *.??00
+    else if decim and $ffff0000 = $30300000 then // 2 decimals -> trunc *.??00
       dec(result, 2);
   end;
   MoveFast(P^, Dest^, result);
@@ -6556,7 +6556,7 @@ function StrToCurr64(P: PUtf8Char; NoDecimal: PBoolean): Int64;
 var
   c: cardinal;
   minus: boolean;
-  Dec: cardinal;
+  decim: cardinal;
 begin
   result := 0;
   if P = nil then
@@ -6582,11 +6582,11 @@ begin
   if P^ = '.' then
   begin
     // '.5' -> 500
-    Dec := 2;
+    decim := 2;
     inc(P);
   end
   else
-    Dec := 0;
+    decim := 0;
   c := byte(P^) - 48;
   if c > 9 then
     exit;
@@ -6605,10 +6605,10 @@ begin
       {$endif HASSLOWMUL64}
       inc(result, c);
       inc(P);
-      if Dec <> 0 then
+      if decim <> 0 then
       begin
-        inc(Dec);
-        if Dec < 5 then
+        inc(decim);
+        if decim < 5 then
           continue
         else
           break;
@@ -6616,12 +6616,12 @@ begin
     end
     else
     begin
-      inc(Dec);
+      inc(decim);
       inc(P);
     end;
   until false;
   if NoDecimal <> nil then
-    if Dec = 0 then
+    if decim = 0 then
     begin
       NoDecimal^ := true;
       if minus then
@@ -6630,9 +6630,9 @@ begin
     end
     else
       NoDecimal^ := false;
-  if Dec <> 5 then
-    // Dec=5 most of the time
-    case Dec of
+  if decim <> 5 then
+    // decim=5 most of the time
+    case decim of
       0, 1:
         result := result * 10000;
       {$ifdef HASSLOWMUL64}
