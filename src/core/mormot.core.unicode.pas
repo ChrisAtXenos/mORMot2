@@ -12250,13 +12250,19 @@ const
     79,  79,  215, 79,  85,  85,  85,  85,  89,  222, 223, 65,  65,  65,  65,
     65,  65,  198, 67,  69,  69,  69,  69,  73,  73,  73,  73,  68,  78,  79,
     79,  79,  79,  79,  247, 79,  85,  85,  85,  85,  89,  222, 89);
+  _IDENTS: array[' ' .. 'z'] of byte = ( // = ord(TCharKind)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 6, 4, 6, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 0, 6, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 5, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+var
+  _LANG_ISO: array[TLanguage] of TStrRecConst;
 
 procedure InitializeUnit;
 var
   i: PtrInt;
   c: AnsiChar;
   tc: TTextChar;
-  ck: TCharKind;
   lng: TLanguage;
   p: PByteArray;
 begin
@@ -12282,48 +12288,36 @@ begin
   for i := 138 to 255 do
     if p[i] in [ord('A') .. ord('Z')] then
       inc(p[i], 32); // manual lower
-  for c := low(c) to high(c) do
+  MoveFast(_IDENTS, IDENT_CHARS[' '], SizeOf(_IDENTS));
+  for c := #1 to 'z' do
   begin
-    tc := [];
-    if not (c in [#0, #10, #13]) then
-      include(tc, tcNot01013);
     if c in [#10, #13] then
-      include(tc, tc1013);
-    if c in ['0'..'9', 'a'..'z', 'A'..'Z'] then
-      include(tc, tcWord);
-    if c in ['_', 'a'..'z', 'A'..'Z'] then
-      include(tc, tcIdentifierFirstChar);
-    if c in ['_', '0'..'9', 'a'..'z', 'A'..'Z'] then
-      include(tc, tcIdentifier);
-    if c in ['_', '-', '.', '0'..'9', 'a'..'z', 'A'..'Z'] then
+      tc := [tc1013]
+    else if c <= ' ' then
+      tc := [tcNot01013, tcCtrlNotLF]
+    else
+      tc := [tcNot01013];
+    case IDENT_CHARS[c] of
+      ckLowerAlpha,
+      ckUpperAlpha:
+        tc := tc + [tcWord, tcIdentifier, tcIdentifierFirstChar, tcUriUnreserved];
+      ckDigit:
+        tc := tc + [tcWord, tcIdentifier, tcUriUnreserved];
+      ckUnderscore:
+        tc := tc + [tcIdentifier, tcIdentifierFirstChar, tcUriUnreserved];
+    end;
+    if c in ['-', '.'] then
       // '~' is part of the RFC 3986 but should be escaped in practice
       // see https://blog.synopse.info/?post/2020/08/11/The-RFC%2C-The-URI%2C-and-The-Tilde
       include(tc, tcUriUnreserved);
-    if c in [#1..#9, #11, #12, #14..' '] then
-      include(tc, tcCtrlNotLF);
-    if c in [#1..' ', ';'] then
+    if (c <= ' ') or (c = ';') then
       include(tc, tcCtrlNot0Comma);
     TEXT_CHARS[c] := tc;
-    ck := ckOther;
-    case c of
-      'a'..'z':
-        ck := ckLowerAlpha;
-      'A'..'Z':
-        ck := ckUpperAlpha;
-      '0'..'9':
-        ck := ckDigit;
-      '-', '+':
-        ck := ckSign;
-      '_':
-        ck := ckUnderscore;
-      '.', ',', ';':
-        ck := ckPoint;
-    end;
-    IDENT_CHARS[c] := ck;
   end;
+  FillCharFast(TEXT_CHARS[succ('z')], 255 - ord('z'), 1 shl ord(tcNot01013));
   for lng := succ(low(lng)) to high(lng) do
   begin
-    FastSetString(LANG_ISO[lng], @LANG_ISO_SHORT[lng], 2);
+    FastSetConst(LANG_ISO[lng], _LANG_ISO[lng], @LANG_ISO_SHORT[lng], 2);
     LANG_LCID[lng] := LANG_PRI[lng] or LANG_USER_DEFAULT;
   end;
   LANG_LCID[lngUndefined] := LANG_ENGLISH_US;
