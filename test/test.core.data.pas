@@ -1568,6 +1568,39 @@ var
   F: TFV;
   TLNow: TTimeLog;
 
+  procedure JsonConstants;
+  var
+    c: AnsiChar;
+    jc: TJsonChar;
+    // _JSONCHARS: array[0 .. 127] of byte; if needs recompute
+  begin
+    // validate JSON_CHARS[] pre-computed table
+    for c := #0 to '}' do
+    begin
+      jc := [];
+      if c in [#0, ',', ']', '}', ':'] then
+        include(jc, jcEndOfJsonFieldOr0);        // #0,]}:
+      if c in [#0, ',', ']', '}'] then
+        include(jc, jcEndOfJsonFieldNotName);    // #0,]}
+      if c in [#0, #9, #10, #13, ' ',  ',', '}', ']'] then
+        include(jc, jcEndOfJsonValueField);      // #0#9#10#13 ,}]
+      if c in [#0, '"', '\'] then
+        include(jc, jcJsonStringMarker);         // #0"\
+      if c in ['-', '0'..'9'] then
+      begin
+        include(jc, jcDigitFirstChar);           // -0123456789
+        JSON_TOKENS[c] := jtFirstDigit;
+      end;
+      if c in ['-', '+', '0'..'9', '.', 'E', 'e'] then
+        include(jc, jcDigitFloatChar);           // -+.eE0123456789
+      if c in ['_', '0'..'9', 'a'..'z', 'A'..'Z', '$'] then
+        include(jc, jcJsonIdentifierFirstChar);  // _$0..9a..zA..Z
+      if c in ['_', '-', '0'..'9', 'a'..'z', 'A'..'Z', '.', '[', ']', '$'] then
+        include(jc, jcJsonIdentifier);           // _-.[]$0..9a..zA..Z
+      Check(JSON_CHARS[c] = jc, 'JSON_CHARS');
+    end;
+  end;
+
   procedure TestMyColl(MyColl: TMyCollection);
   begin
     if CheckFailed(MyColl <> nil) then
@@ -2743,6 +2776,7 @@ var
   end;
 
 begin
+  JsonConstants;
   TestSimpleEnum;
   TestJsonArrayAsCsv('', '');
   TestJsonArrayAsCsv('123', '');
@@ -7555,6 +7589,7 @@ begin
   i := GetSetNameValue(TypeInfo(TSetMyEnumPart), p, eoo);
   checkEqual(i, 10, 'TSetMyEnumPart3');
   // emoji testing
+  EmojiInit; // setup global variables
   check(EMOJI_UTF8[eNone] = '');
   checkEqual(BinToHex(EMOJI_UTF8[eGrinning]), 'F09F9880');
   checkEqual(BinToHex(EMOJI_UTF8[ePray]), 'F09F998F');

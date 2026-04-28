@@ -3939,12 +3939,14 @@ begin
       for i := 0 to MAX do
       begin
         v := i and 511;
-        int.Unique(tmp, SmallUInt32Utf8[v]);
+        int.Unique(tmp, SmallUInt32Utf8[v]); // SmallUInt32Utf8[] have refcnt=-1
         check(Utf8ToInteger(tmp) = v);
       end;
       checkEqual(int.Count, 512);
-      checkEqual(int.Clean, 0);
+      tmp := '';
       checkEqual(int.Count, 512);
+      checkEqual(int.Clean, 512); // all int.Pool[] have refcnt=1 -> clean
+      checkEqual(int.Count, 0);
     finally
       int.Free;
     end;
