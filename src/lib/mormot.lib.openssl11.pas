@@ -11322,6 +11322,12 @@ begin
     if BoundContext.AcceptCert = nil then
       raise EOpenSslNetTls.Create('AfterAccept: missing AfterBind');
     fSsl := SSL_new(BoundContext.AcceptCert);
+    // SSL_MODE_ENABLE_PARTIAL_WRITE ($01): SSL_write returns partial count on
+    // partial send, so mORMot can advance the buffer pointer correctly and
+    // issue a fresh SSL_write for the remainder (no retry-same-buffer constraint)
+    // SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER ($02): allow retry with different
+    // buffer pointer after WANT_WRITE (mORMot copies pending data to fWr)
+    SSL_set_mode(fSsl, $00000003); // ENABLE_PARTIAL_WRITE | ACCEPT_MOVING_WRITE_BUFFER
     Check('AfterAccept set_fd', SSL_set_fd(fSsl, Socket.Socket));
     // server TLS negotiation with server
     Check('AfterAccept accept', SSL_accept(fSsl));
