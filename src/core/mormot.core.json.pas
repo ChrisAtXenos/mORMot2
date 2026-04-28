@@ -11673,6 +11673,15 @@ begin
 end;
 
 
+const
+  _JSONCHARS: array[0 .. 127] of byte = ( // = lower TJsonCharSet
+   60, 0, 0, 0, 0, 0, 0, 0, 0, 16, 16, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 32, 0, 3, 0, 0, 0, 0, 0, 0, 128, 28, 194, 130,
+   0, 195, 195, 195, 195, 195, 195, 195, 195, 195, 195, 4, 0, 0, 0, 0, 0, 0, 3,
+   3, 3, 3, 131, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+   2, 32, 30, 0, 3, 0, 3, 3, 3, 3, 131, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+   3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 28, 0, 0);
+
 type // local type definitions for their own RTTI to be found by name
   RawUtf8 = type Utf8String;
   {$ifdef CPU64}
@@ -11685,87 +11694,64 @@ type // local type definitions for their own RTTI to be found by name
 
 procedure InitializeUnit;
 var
-  i: {$ifdef FPC}system.PtrInt{$else}integer{$endif}; // circumvent Delphi bug
   c: AnsiChar;
-  jc: TJsonChar;
-  p: PByteArray;
+  p: PAnsiCharToAnsiChar;
   r: PJsonCharSet;
-  {$ifdef FPC} dummy: RawUtf8; {$endif}
+  t: PJsonTokens;
+  {$ifdef FPC} dummy: pointer; {$endif}
 begin
   // branchless JSON escaping - JSON_ESCAPE_NONE=0 if no JSON escape needed
+  FillCharFast(JSON_ESCAPE, 32, JSON_ESCAPE_UNICODEHEX); // 2: #1..#31 as \u00xx
   p := @JSON_ESCAPE;
-  p[0]   := JSON_ESCAPE_ENDINGZERO; // 1 for #0 end of input
-  for i := 1 to 31 do
-    p[i] := JSON_ESCAPE_UNICODEHEX; // 2 to escape #1..#31 as \u00xx
-  p[8]   := ord('b');  // others contain the escaped character
-  p[9]   := ord('t');
-  p[10]  := ord('n');
-  p[12]  := ord('f');
-  p[13]  := ord('r');
-  p[ord('\')] := ord('\');
-  p[ord('"')] := ord('"');
+  p[#0]  := AnsiChar(JSON_ESCAPE_ENDINGZERO); // 1 for #0 end of input
+  p[#8]  := 'b';               // others contain the escaped character
+  p[#9]  := 't';
+  p[#10] := 'n';
+  p[#12] := 'f';
+  p[#13] := 'r';
+  p['\'] := '\';
+  p['"'] := '"';
   // branchless JSON unescaping - default JSON_UNESCAPE_UNEXPECTED = #0
   p := @JSON_UNESCAPE;
-  for i := 32 to 127 do
-    p[i] := i;
-  p[ord('b')] := 8;
-  p[ord('t')] := 9;
-  p[ord('n')] := 10;
-  p[ord('f')] := 12;
-  p[ord('r')] := 13;
-  p[ord('u')] := ord(JSON_UNESCAPE_UTF16); // = #1
+  for c := #32 to #127 do
+    p[c] := c;
+  p['b'] := #8;
+  p['t'] := #9;
+  p['n'] := #10;
+  p['f'] := #12;
+  p['r'] := #13;
+  p['u'] := JSON_UNESCAPE_UTF16; // = #1
   // fast JSON parsing using JSON_CHARS[] and JSON_TOKENS[] lookup tables
-  for c := low(c) to high(c) do
-  begin
-    jc := [];
-    if c in [#0, ',', ']', '}', ':'] then
-      include(jc, jcEndOfJsonFieldOr0);        // #0,]}:
-    if c in [#0, ',', ']', '}'] then
-      include(jc, jcEndOfJsonFieldNotName);    // #0,]}
-    if c in [#0, #9, #10, #13, ' ',  ',', '}', ']'] then
-      include(jc, jcEndOfJsonValueField);      // #0#9#10#13 ,}]
-    if c in [#0, '"', '\'] then
-      include(jc, jcJsonStringMarker);         // #0"\
-    if c in ['-', '0'..'9'] then
-    begin
-      include(jc, jcDigitFirstChar);           // -0123456789
-      JSON_TOKENS[c] := jtFirstDigit;
-    end;
-    if c in ['-', '+', '0'..'9', '.', 'E', 'e'] then
-      include(jc, jcDigitFloatChar);           // -+.eE0123456789
-    if c in ['_', '0'..'9', 'a'..'z', 'A'..'Z', '$'] then
-      include(jc, jcJsonIdentifierFirstChar);  // _$0..9a..zA..Z
-    if c in ['_', '-', '0'..'9', 'a'..'z', 'A'..'Z', '.', '[', ']', '$'] then
-      include(jc, jcJsonIdentifier);           // _-.[]$0..9a..zA..Z
-    JSON_CHARS[c] := jc;
-    if c in ['_', 'a'..'z', 'A'..'Z'] then
-      // exclude '0'..'9' as already in jtFirstDigit - jtDollar is distinct
-      JSON_TOKENS[c] := jtIdentifierFirstChar;
-  end;
+  MoveFast(_JSONCHARS, JSON_CHARS, SizeOf(_JSONCHARS));
+  MoveFast(_JSONCHARS, JSON_CHARS_RELAXED, SizeOf(_JSONCHARS));
   r := @JSON_CHARS_RELAXED; // extended to support minimalistic .morml
-  r^ := JSON_CHARS;
   r^['{'] := r^['{'] + [jcEndOfJsonValueField, jcEndOfJsonFieldOr0, jcEndOfJsonFieldNotName];
   r^['['] := r^['['] + [jcEndOfJsonValueField, jcEndOfJsonFieldOr0, jcEndOfJsonFieldNotName];
   include(r^['='], jcEndOfJsonFieldOr0);
   include(r^['#'], jcEndOfJsonFieldNotName);
   r^[#10] := r^[#10] + [jcEndOfJsonFieldOr0, jcEndOfJsonFieldNotName];
-  p := @JSON_TOKENS;
-  p[ord(#0 )]  := ord(jtEndOfBuffer);
-  p[ord('{')]  := ord(jtObjectStart);
-  p[ord('}')]  := ord(jtObjectStop);
-  p[ord('[')]  := ord(jtArrayStart);
-  p[ord(']')]  := ord(jtArrayStop);
-  p[ord(':')]  := ord(jtAssign);
-  p[ord('=')]  := ord(jtEqual);
-  p[ord(',')]  := ord(jtComma);
-  p[ord('''')] := ord(jtSingleQuote);
-  p[ord('"')]  := ord(jtDoubleQuote);
-  p[ord('t')]  := ord(jtTrueFirstChar);
-  p[ord('f')]  := ord(jtFalseFirstChar);
-  p[ord('n')]  := ord(jtNullFirstChar);
-  p[ord('/')]  := ord(jtSlash);
-  p[ord('#')]  := ord(jtHash);
-  p[ord('$')]  := ord(jtDollar);
+  FillCharFast(JSON_TOKENS['0'], 10, ord(jtFirstDigit));
+  FillCharFast(JSON_TOKENS['a'], 26, ord(jtIdentifierFirstChar));
+  FillCharFast(JSON_TOKENS['A'], 26, ord(jtIdentifierFirstChar));
+  t := @JSON_TOKENS;
+  t[#0]   := jtEndOfBuffer;
+  t['-']  := jtFirstDigit;
+  t['{']  := jtObjectStart;
+  t['}']  := jtObjectStop;
+  t['[']  := jtArrayStart;
+  t[']']  := jtArrayStop;
+  t[':']  := jtAssign;
+  t['=']  := jtEqual;
+  t[',']  := jtComma;
+  t[''''] := jtSingleQuote;
+  t['"']  := jtDoubleQuote;
+  t['t']  := jtTrueFirstChar;
+  t['f']  := jtFalseFirstChar;
+  t['n']  := jtNullFirstChar;
+  t['/']  := jtSlash;
+  t['#']  := jtHash;
+  t['$']  := jtDollar;
+  t['_']  := jtIdentifierFirstChar;
   // initialize JSON serialization
   Rtti.GlobalClass := TRttiJson; // will ensure Rtti.Count = 0
   // now we can register some local type alias to be found by name or ASAP
@@ -11778,7 +11764,8 @@ begin
   GetDataFromJson := _GetDataFromJson;
   InitializeVariantsJson; // from mormot.core.variants
   {$ifdef FPC} // we need to call it once so that it is linked to the executable
-  JsonForDebug(nil, dummy, dummy);
+  dummy := nil;
+  JsonForDebug(nil, RawUtf8(dummy), RawUtf8(dummy));
   {$endif FPC}
 end;
 
