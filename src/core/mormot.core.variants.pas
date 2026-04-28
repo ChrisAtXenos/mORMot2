@@ -12945,9 +12945,9 @@ end;
 
 const
   // _CMP2SORT[] comparison of simple types - as copied to _VARDATACMP[]
-  _VARDATACMPNUM1: array[varEmpty..varDate] of byte = (
+  _VARDATACMPNUM1: array[varEmpty .. varDate] of byte = (
     1, 1, 2, 3, 4, 5, 6, 7);
-  _VARDATACMPNUM2: array[varShortInt..varWord64] of byte = (
+  _VARDATACMPNUM2: array[varShortInt .. varWord64] of byte = (
     8, 9, 10, 11, 12, 13);
 
 procedure InitializeUnit;
@@ -12966,19 +12966,19 @@ begin
   DocVariantVType := vt;
   SetJsonVTypes(@JSON_, vt, @JSON_VTYPE);
   PCardinal(@DV_FAST[dvUndefined])^ := vt;
-  PCardinal(@DV_FAST[dvArray])^ := vt;
-  PCardinal(@DV_FAST[dvObject])^ := vt;
+  PCardinal(@DV_FAST[dvArray])^     := vt;
+  PCardinal(@DV_FAST[dvObject])^    := vt;
   assert({%H-}SynVariantTypes[0].VarType = vt);
   PDocVariantData(@DV_FAST[dvUndefined])^.VOptions := JSON_FAST;
-  PDocVariantData(@DV_FAST[dvArray])^.VOptions := JSON_FAST + [dvoIsArray];
-  PDocVariantData(@DV_FAST[dvObject])^.VOptions := JSON_FAST + [dvoIsObject];
+  PDocVariantData(@DV_FAST[dvArray    ])^.VOptions := JSON_FAST + [dvoIsArray];
+  PDocVariantData(@DV_FAST[dvObject   ])^.VOptions := JSON_FAST + [dvoIsObject];
   // FPC allows to define variables with absolute JSON_[...] but Delphi doesn't
-  JSON_FAST_STRICT := JSON_[mFastStrict];
-  JSON_FAST_EXTENDED := JSON_[mFastExtended];
+  JSON_FAST_STRICT         := JSON_[mFastStrict];
+  JSON_FAST_EXTENDED       := JSON_[mFastExtended];
   JSON_FAST_EXTENDEDINTERN := JSON_[mFastExtendedIntern];
-  JSON_NAMEVALUE := PDocVariantOptionsBool(@JSON_[mNameValue])^;
-  JSON_NAMEVALUEINTERN := PDocVariantOptionsBool(@JSON_[mNameValueIntern])^;
-  JSON_OPTIONS := PDocVariantOptionsBool(@JSON_[mDefault])^;
+  JSON_NAMEVALUE           := PDocVariantOptionsBool(@JSON_[mNameValue])^;
+  JSON_NAMEVALUEINTERN     := PDocVariantOptionsBool(@JSON_[mNameValueIntern])^;
+  JSON_OPTIONS             := PDocVariantOptionsBool(@JSON_[mDefault])^;
   // redirect to the feature complete variant wrapper functions
   VariantClearSeveral     := @_VariantClearSeveral;
   _VariantSaveJson        := @__VariantSaveJson;
@@ -12994,10 +12994,10 @@ begin
     for i := low(_VARDATACMPNUM2) to high(_VARDATACMPNUM2) do
       _VARDATACMP[i, ins] := _VARDATACMPNUM2[i];
   end;
-  _VARDATACMP[varString, false] := 15;
-  _VARDATACMP[varString, true]  := 16;
-  _VARDATACMP[varOleStr, false] := 17;
-  _VARDATACMP[varOleStr, true]  := 18;
+  _VARDATACMP[varString, false]  := 15;
+  _VARDATACMP[varString, true]   := 16;
+  _VARDATACMP[varOleStr, false]  := 17;
+  _VARDATACMP[varOleStr, true]   := 18;
   {$ifdef HASVARUSTRING}
   _VARDATACMP[varUString, false] := 17;
   _VARDATACMP[varUString, true]  := 18;
