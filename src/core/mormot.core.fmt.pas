@@ -370,6 +370,10 @@ var
   /// to recognize simple :) :( :| :/ :D :o :p :s characters as smilleys
   EMOJI_AFTERDOTS: array['('..'|'] of TEmoji;
 
+/// setup the Emoji internal structures, e.g. all EMOJI_*[] global variables
+// - delayed to reduce process startup time for this seldom-used feature
+procedure EmojiInit;
+
 /// recognize github/Markdown compatible text of Emojis
 // - for instance 'sunglasses' text buffer will return eSunglasses
 // - returns eNone if no case-insensitive match was found
@@ -3451,6 +3455,46 @@ begin
   doesc.AddHtmlEscapeMarkdown(W, P, esc);
 end;
 
+var
+  _EMOJISET: boolean;
+  _EMOJI_UTF8: array[TEmoji] of TStrRecConst;
+
+procedure EmojiInit;
+var
+  e: TEmoji;
+begin
+  if _EMOJISET then
+    exit;
+  GlobalLock;
+  if not _EMOJISET then
+  begin
+    // Emoji Efficient Parsing
+    Assert(ord(high(TEmoji)) = $4f + 1);
+    EMOJI_RTTI := GetEnumName(TypeInfo(TEmoji), 1); // ignore eNone=0
+    GetEnumTrimmedNames(TypeInfo(TEmoji), @EMOJI_TEXT, scLowerCase);
+    FastAssignNew(EMOJI_TEXT[eNone]);
+    for e := succ(low(e)) to high(e) do
+    begin
+      Join([':', EMOJI_TEXT[e], ':'], EMOJI_TAG[e]);
+      // order matches U+1F600 to U+1F64F codepoints
+      Ucs4ToUtf8(ord(e) + $1f5ff, FastSetConst(EMOJI_UTF8[e], _EMOJI_UTF8[e], nil, 4));
+    end;
+    EMOJI_AFTERDOTS[')'] := eSmiley;
+    EMOJI_AFTERDOTS['('] := eFrowning;
+    EMOJI_AFTERDOTS['|'] := eExpressionless;
+    EMOJI_AFTERDOTS['/'] := eConfused;
+    EMOJI_AFTERDOTS['D'] := eLaughing;
+    EMOJI_AFTERDOTS['o'] := eOpen_mouth;
+    EMOJI_AFTERDOTS['O'] := eOpen_mouth;
+    EMOJI_AFTERDOTS['p'] := eYum;
+    EMOJI_AFTERDOTS['P'] := eYum;
+    EMOJI_AFTERDOTS['s'] := eScream;
+    EMOJI_AFTERDOTS['S'] := eScream;
+    _EMOJISET := true;
+  end;
+  GlobalUnLock;
+end;
+
 function EmojiFromText(P: PUtf8Char; len: PtrInt): TEmoji;
 begin
   // RTTI has shortstrings in adjacent L1 cache lines -> faster than EMOJI_TEXT[]
@@ -3463,6 +3507,8 @@ function EmojiParseDots(var P: PUtf8Char; W: TTextWriter): TEmoji;
 var
   c: PUtf8Char;
 begin
+  if not _EMOJISET then
+    EmojiInit;
   result := eNone;
   inc(P); // ignore trailing ':'
   c := P;
@@ -3496,6 +3542,8 @@ var
   B: PUtf8Char;
   c: cardinal;
 begin
+  if not _EMOJISET then
+    EmojiInit;
   if (P <> nil) and
      (W <> nil) then
     repeat
@@ -5527,8 +5575,6 @@ end;
 
 procedure InitializeUnit;
 var
-  c: AnsiChar;
-  e: TEmoji;
   esc: PAnsiCharToByte;
 begin
   // HTML Efficient Parsing
@@ -5549,42 +5595,18 @@ begin
   esc['"'] := 4;
   _AddHtmlEscape := __AddHtmlEscape;
   // XML Efficient Parsing
+  FillCharFast(XML_ESC, 31, 9); // ignore invalid #1 .. #31 control char
   esc := @XML_ESC; // XML_ESCAPED[] = &#x09 &#x0a &#x0d &lt &gt &amp &quot &apos
-  for c := #1 to #31 do
-    esc[c] := 9; // ignore invalid control char
-  esc[#0]  := 1; // go out of loop to abort
-  esc[#9]  := 1;
-  esc[#10] := 2;
-  esc[#13] := 3;
-  esc['<'] := 4;
-  esc['>'] := 5;
-  esc['&'] := 6;
-  esc['"'] := 7;
+  esc[#0]   := 1;   // go out of loop to abort
+  esc[#9]   := 1;
+  esc[#10]  := 2;
+  esc[#13]  := 3;
+  esc['<']  := 4;
+  esc['>']  := 5;
+  esc['&']  := 6;
+  esc['"']  := 7;
   esc[''''] := 8;
-  // Emoji Efficient Parsing
-  Assert(ord(high(TEmoji)) = $4f + 1);
-  EMOJI_RTTI := GetEnumName(TypeInfo(TEmoji), 1); // ignore eNone=0
-  GetEnumTrimmedNames(TypeInfo(TEmoji), @EMOJI_TEXT, scLowerCase);
-  FastAssignNew(EMOJI_TEXT[eNone]);
-  for e := succ(low(e)) to high(e) do
-  begin
-    Join([':', EMOJI_TEXT[e], ':'], EMOJI_TAG[e]);
-    // order matches U+1F600 to U+1F64F codepoints
-    Ucs4ToUtf8(ord(e) + $1f5ff, FastSetString(EMOJI_UTF8[e], 4));
-  end;
-  EMOJI_AFTERDOTS[')'] := eSmiley;
-  EMOJI_AFTERDOTS['('] := eFrowning;
-  EMOJI_AFTERDOTS['|'] := eExpressionless;
-  EMOJI_AFTERDOTS['/'] := eConfused;
-  EMOJI_AFTERDOTS['D'] := eLaughing;
-  EMOJI_AFTERDOTS['o'] := eOpen_mouth;
-  EMOJI_AFTERDOTS['O'] := eOpen_mouth;
-  EMOJI_AFTERDOTS['p'] := eYum;
-  EMOJI_AFTERDOTS['P'] := eYum;
-  EMOJI_AFTERDOTS['s'] := eScream;
-  EMOJI_AFTERDOTS['S'] := eScream;
-end;
-
+end; // EMOJI_*[] constants are delayed via explicit EmojiInit
 
 initialization
   InitializeUnit;
