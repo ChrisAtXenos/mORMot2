@@ -2441,7 +2441,7 @@ type
     scTitleCase, scCamelCase, scPascalCase);
 
 /// change the casing of an UTF-8 text buffer
-procedure SetCase(var Dest: RawUtf8; Text: PAnsiChar; TextLen: PtrInt; aKind: TSetCase); overload;
+procedure SetCase(var Dest: RawUtf8; Text: pointer; TextLen: PtrInt; aKind: TSetCase); overload;
 
 /// change the casing of an UTF-8 text string
 function SetCase(const Text: RawUtf8; aKind: TSetCase): RawUtf8; overload;
@@ -9689,7 +9689,7 @@ end;
 var
   NormToLower_Ansi7: TNormTable; // = NormToLowerAnsi7 with '_' into '-'
 
-procedure SetCase(var Dest: RawUtf8; Text: PAnsiChar; TextLen: PtrInt; aKind: TSetCase);
+procedure SetCase(var Dest: RawUtf8; Text: pointer; TextLen: PtrInt; aKind: TSetCase);
 begin
   if (Text = nil) or
      (TextLen <= 0) then
@@ -9697,23 +9697,23 @@ begin
   else
     case aKind of
       scUnCamelCase:        // 'Un camel case'
-        UnCamelCase(Dest, pointer(Text), TextLen);
+        UnCamelCase(Dest, Text, TextLen);
       scUnCamelTitle:       // 'Un Camel Title'
         begin
-          UnCamelCase(Dest, pointer(Text), TextLen);
+          UnCamelCase(Dest, Text, TextLen);
           TitleCaseSelf(Dest);
         end;
       scLowerCase:          // 'lowercase'
-        CaseCopy(pointer(Text), TextLen, @NormToLowerAnsi7, Dest);
+        CaseCopy(Text, TextLen, @NormToLowerAnsi7, Dest);
       scLower_Case:         // 'lower-case'
-        CaseCopy(pointer(Text), TextLen, @NormToLower_Ansi7, Dest);
+        CaseCopy(Text, TextLen, @NormToLower_Ansi7, Dest);
       scLowerCaseFirst:     // 'lowerCaseFirst'
         begin
           FastSetString(Dest, Text, TextLen);
           PByte(Dest)^ := NormToLowerAnsi7Byte[PByte(Dest)^];
         end;
       scUpperCase:          // 'UPPERCASE'
-        CaseCopy(pointer(Text), TextLen, @NormToUpperAnsi7, Dest);
+        CaseCopy(Text, TextLen, @NormToUpperAnsi7, Dest);
       scSnakeCase:          // 'snake_case'
         SnakeCase(Text, TextLen, Dest);
       scScreamingSnakeCase: // 'SCREAMING_SNAKE_CASE'
@@ -9732,7 +9732,7 @@ begin
       scPascalCase:         // 'PascalCase'
         CamelCase(Text, TextLen, Dest);
       scAny_Removed:        // 'AnyRemoved'
-        Any_Remove(Dest, pointer(Text), TextLen);
+        Any_Remove(Dest, Text, TextLen);
     else // scNoTrim, scTrimLeft: 'stNoTrim', 'TrimLeft'
       FastSetString(Dest, Text, TextLen);
     end;
