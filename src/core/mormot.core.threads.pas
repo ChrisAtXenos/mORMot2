@@ -1959,9 +1959,9 @@ begin
   fLast := -2;
   fValues.Init(aArrayTypeInfo, fValueVar, @fCount);
   if aKind = ptNone then
-    aKind := fValues.Info.ArrayFirstFieldSort;      // compare by first field
+    aKind := fValues.Info.ArrayFirstFieldSort; // compare by first field
   if aKind <> ptNone then
-    fValues.SetParserType(aKind, aCaseInsensitive); // set fValues.fCompare()
+    fValues.Compare := DynArraySortOne(aKind, aCaseInsensitive); // may be nil
 end;
 
 {$ifdef HASGENERICS}
