@@ -10623,11 +10623,20 @@ finally
   end;
 end;
 
+type
+  TNotifyTask = record
+    Name: string;
+    Payload: RawJson;
+    Active: boolean;
+  end;
+  TNotifyTaskDynArray = array of TNotifyTask;
+
 procedure TTestCoreBase._TSynQueue;
 var
   o, i, j, k, n: integer; // not PtrInt
   f: TSynQueue;
   u, v: RawUtf8;
+  r1, r2: TNotifyTask;
   savedint: TIntegerDynArray;
   savedu: TRawUtf8DynArray;
 begin
@@ -10755,6 +10764,37 @@ begin
       check(f.Capacity > 0);
     end;
     check(Length(savedu) = length(savedint));
+  finally
+    f.Free;
+  end;
+  f := TSynQueue.Create(TypeInfo(TNotifyTaskDynArray));
+  try
+    checkEqual(f.Count, 0);
+    check(not f.Pending);
+    for i := 1 to 100 do
+    begin
+      r1.Name := IntToStr(i);
+      r1.Active := i and 3 = 0;
+      r1.Payload := Make(['{"int":', i, '}']);
+      checkNotEqual(f.Count, i);
+      f.Push(r1);
+      checkEqual(f.Count, i);
+      check(f.Pending);
+    end;
+    for i := 1 to 100 do
+    begin
+      check(f.Pending);
+      RecordZero(@r2, TypeInfo(TNotifyTask));
+      Check(r2.Name = '');
+      Check(not r2.Active);
+      Check(r2.Payload = '');
+      Check(f.Pop(r2));
+      Check(r2.Name = IntToStr(i));
+      Check(r2.Active = (i and 3 = 0));
+    end;
+    checkEqual(f.Count, 0);
+    Check(not f.Pop(r2));
+    checkEqual(f.Count, 0);
   finally
     f.Free;
   end;
